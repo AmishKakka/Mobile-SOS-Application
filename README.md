@@ -40,3 +40,7 @@
         - or -
         • Open frontend/ios/frontend.xcworkspace in Xcode or run "xed -b ios"
         • Hit the Run button
+
+## UI Design
+
+POC UI design updates in progress.
