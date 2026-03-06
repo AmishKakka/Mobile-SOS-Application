@@ -40,3 +40,34 @@
         - or -
         • Open frontend/ios/frontend.xcworkspace in Xcode or run "xed -b ios"
         • Hit the Run button
+
+## Demo Scripts
+
+Demo narration scripts are available at:
+
+- `docs/demo-scripts.md`
+
+They include:
+
+- Browser PoC script (what can be shown today)
+- Production-style script with clearly marked `[SIMULATED]` steps
+
+## Redis (Docker Compose)
+
+From the repository root:
+
+```sh
+docker compose up -d redis
+docker compose ps
+```
+
+## Backend Test Commands
+
+From `backend/`:
+
+```sh
+npm run test:server
+npm run test:redis-demo
+npm run test:e2e
+npm run test:all
+```

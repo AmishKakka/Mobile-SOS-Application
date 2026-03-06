@@ -1,7 +1,9 @@
 {
   "scripts": {
+    "test:e2e": "node scripts/testE2E.js",
     "test:redis-demo": "node scripts/testRedisDemo.js",
-    "test:server": "node scripts/testServer.js"
+    "test:server": "node scripts/testServer.js",
+    "test:all": "npm run test:server && npm run test:redis-demo && npm run test:e2e"
   },
   "dependencies": {
     "cors": "^2.8.6",
