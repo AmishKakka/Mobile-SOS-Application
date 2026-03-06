@@ -1,5 +1,12 @@
-import Redis from 'ioredis';
-const redis = new Redis();
+const Redis = require('ioredis');
+const redis = new Redis({
+    maxRetriesPerRequest: 1,
+    retryStrategy: () => null,
+});
+
+redis.on('error', (error) => {
+    // Prevent unhandled event noise; caller-level flows report actionable errors.
+});
 
 async function addNewUserLocation(userId, h3Index, longitude, latitude) {
     try {
@@ -46,4 +53,24 @@ async function main() {
     await addNewUserLocation('user123', "demohash123", -122.4194, 37.7749);
     await updateLocation('user123', "demohash456", -122, 40);
 }
-main();
+
+if (require.main === module) {
+    main()
+        .catch((error) => {
+            console.error(error);
+            process.exitCode = 1;
+        })
+        .finally(async () => {
+            try {
+                await redis.quit();
+            } catch (_error) {
+                redis.disconnect();
+            }
+        });
+}
+
+module.exports = {
+    addNewUserLocation,
+    updateLocation,
+    main,
+};
