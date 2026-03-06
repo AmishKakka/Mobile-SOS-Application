@@ -1,125 +1,110 @@
-import Redis from 'ioredis';
-const redis = new Redis();
+const Redis = require('ioredis');
+const h3 = require('h3-js');
 
-export async function triggerSOS(victimLat, victimLng, rejectIds = []) {
-    //rejectIds stores userIds who decline the SOS alert
+const MAX_RINGS = 18;
+const MAX_HELPERS = 5;
+let redisClient;
 
-    // Convert a victim lat/lng point to a hexagon index at resolution 9
+function getRedisClient() {
+    if (!redisClient) {
+        redisClient = new Redis({
+            maxRetriesPerRequest: 1,
+            retryStrategy: () => null,
+        });
+
+        redisClient.on('error', () => {
+            // Keep runtime logs clean; callers handle user-facing errors.
+        });
+    }
+
+    return redisClient;
+}
+
+async function triggerSOS(victimLat, victimLng, rejectIds = []) {
+    if (!Number.isFinite(victimLat) || !Number.isFinite(victimLng)) {
+        throw new TypeError('victimLat and victimLng must be valid numbers.');
+    }
+    if (!Array.isArray(rejectIds)) {
+        throw new TypeError('rejectIds must be an array.');
+    }
+
+    const redis = getRedisClient();
+    const rejectIdsSet = new Set(rejectIds.map(String));
     const victimCell = h3.latLngToCell(victimLat, victimLng, 9);
 
-    // Get the center of the hexagon
-    const victimCellCenterCoordinates = h3.cellToLatLng(victimCell);
+    let helpersPool = (await redis.smembers(`active-users:${victimCell}`))
+        .filter((userId) => !rejectIdsSet.has(userId));
 
-    // Get the vertices of the hexagon
-    const victimCellBoundry = h3.cellToBoundary(victimCell);
+    let currentRing = 1;
+    while (helpersPool.length < MAX_HELPERS && currentRing <= MAX_RINGS) {
+        const ringCells = h3.gridRing(victimCell, currentRing);
 
-    const rejectIdsSet = new Set(rejectIds);
+        for (const cell of ringCells) {
+            const ringHelpers = (await redis.smembers(`active-users:${cell}`))
+                .filter((userId) => !rejectIdsSet.has(userId));
+            helpersPool = [...new Set([...helpersPool, ...ringHelpers])];
 
-    let helpersPool = (await redis.smembers(`active-users:${victimCell}`)).filter(userId => !rejectIdsSet.has(userId));
-
-    try{
-
-        
-        let currentRing = 1;
-        const MAX_RINGS = 18;
-    
-        //check for more helpers in neighbor cells
-        while(helpersPool.length < 5 && currentRing<=MAX_RINGS){
-            
-            const expandHelpersPool = h3.gridRing(victimCell, currentRing);
-
-            for(let i=0; i<expandHelpersPool.length; i++){
-
-                // Make the database call
-                const checkForMoreHelpers = (await redis.smembers(`active-users:${expandHelpersPool[i]}`)).filter(userId => !rejectIdsSet.has(userId));
-                // Merge the arrays
-                helpersPool = [...new Set([...helpersPool, ...checkForMoreHelpers])];
-
-                if(helpersPool.length >= 5){
-                    break;
-                }
+            if (helpersPool.length >= MAX_HELPERS) {
+                break;
             }
-
-            currentRing++;
         }
 
-        if(helpersPool.length == 0){
-            return({
-                status: 'CALL_EMERGENCY_CONTACTS',
-                message: 'No helpers in 2 miles radius'
-            })
-        }
-        console.log("Final Helpers Poll:" , helpersPool);
-    }
-    catch(error){
-        console.log(error);
+        currentRing++;
     }
 
-    //Initialize Pipeline
-    /*Pipelines avoid network and processing overhead by sending several 
-    commands to the server together in a single communication. 
-    The server then sends back a single communication with all the responses. 
-    See the Pipelining page for more information.
-    */
-    const pipeline =  redis.multi()
-    
-    for(let j=0; j<helpersPool.length; j++){
-        pipeline.hgetall(`last-location:${helpersPool[j]}`)
+    if (helpersPool.length === 0) {
+        return {
+            status: 'CALL_EMERGENCY_CONTACTS',
+            message: 'No helpers in 2 miles radius',
+        };
+    }
+
+    const pipeline = redis.multi();
+    for (const helperId of helpersPool) {
+        pipeline.hgetall(`last-location:${helperId}`);
     }
 
     const results = await pipeline.exec();
-    console.log("Results:" , results);
-
     const helpersDetail = [];
 
-    for(let i = 0; i<results.length; i++){
-        const error = results[i][0]
-        const locationData = results[i][1];
-
-        // If the user had location data in Redis
-        if(locationData && locationData.lat){
-            //parseFloat() convert Redis string to decimal
-            const helpersLat = parseFloat(locationData.lat);
-            const helpersLng = parseFloat(locationData.long);
-
-            const finalDistance = calculateDistance(victimLat, victimLng, helpersLat, helpersLng);
-
-            helpersDetail.push({
-                userId: helpersPool[i],
-                distance: finalDistance,
-                lat: helpersLat,
-                long: helpersLng
-            })
+    for (let i = 0; i < results.length; i++) {
+        const [error, locationData] = results[i];
+        if (error || !locationData || !locationData.lat || !locationData.long) {
+            continue;
         }
+
+        const helperLat = parseFloat(locationData.lat);
+        const helperLng = parseFloat(locationData.long);
+        const distance = calculateDistance(victimLat, victimLng, helperLat, helperLng);
+
+        helpersDetail.push({
+            userId: helpersPool[i],
+            distance,
+            lat: helperLat,
+            long: helperLng,
+        });
     }
 
-    //Sort helpers distance in ascending order
-    helpersDetail.sort((a,b) => a.distance - b.distance);
-    
-    //Get nearest 5 helper
-    const nearestHelper = helpersDetail.slice(0,5);
-    console.log("Top 5 nearest helper:" , nearestHelper);
-
-    return nearestHelper;
+    helpersDetail.sort((a, b) => a.distance - b.distance);
+    return helpersDetail.slice(0, MAX_HELPERS);
 }
 
 function calculateDistance(victimLat, victimLng, lat2, long2) {
-    const R = 6371e3; // Radius of the Earth in meters
-
-    // Convert degrees to radians
+    const earthRadiusMeters = 6371e3;
     const dLat = (lat2 - victimLat) * Math.PI / 180;
     const dLon = (long2 - victimLng) * Math.PI / 180;
-    const phi1 = victimLat * Math.PI / 180; // phi is latitude
+    const phi1 = victimLat * Math.PI / 180;
     const phi2 = lat2 * Math.PI / 180;
 
-    // Haversine formula
     const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-              Math.cos(phi1) * Math.cos(phi2) *
-              Math.sin(dLon / 2) * Math.sin(dLon / 2);
+        Math.cos(phi1) * Math.cos(phi2) *
+        Math.sin(dLon / 2) * Math.sin(dLon / 2);
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 
-    // Distance in meters
-    const distance = R * c;
-    return distance;
+    return earthRadiusMeters * c;
 }
+
+module.exports = {
+    triggerSOS,
+};
 

@@ -48,10 +48,22 @@ async function updateLocation(userId, newH3Index, longitude, latitude) {
     }
 }
 
+async function closeRedis() {
+    try {
+        await redis.quit();
+    } catch (_error) {
+        redis.disconnect();
+    }
+}
+
 
 async function main() {
-    await addNewUserLocation('user123', "demohash123", -122.4194, 37.7749);
-    await updateLocation('user123', "demohash456", -122, 40);
+    try {
+        await addNewUserLocation('user123', "demohash123", -122.4194, 37.7749);
+        await updateLocation('user123', "demohash456", -122, 40);
+    } finally {
+        await closeRedis();
+    }
 }
 
 if (require.main === module) {
@@ -59,13 +71,6 @@ if (require.main === module) {
         .catch((error) => {
             console.error(error);
             process.exitCode = 1;
-        })
-        .finally(async () => {
-            try {
-                await redis.quit();
-            } catch (_error) {
-                redis.disconnect();
-            }
         });
 }
 

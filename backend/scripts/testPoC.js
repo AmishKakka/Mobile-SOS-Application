@@ -1,9 +1,8 @@
-import Redis from 'ioredis';
-import * as h3 from 'h3-js'
+const Redis = require('ioredis');
+const h3 = require('h3-js');
+const { triggerSOS } = require('../src/sos/dynamic.js');
 
 const redis = new Redis();
-
-import { triggerSOS } from '../src/sos/dynamic.js';
 
 // ---------------------------------------------------------
 // TEST

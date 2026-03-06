@@ -3,14 +3,41 @@ const http = require('http');
 const path = require('path');
 const { Server } = require('socket.io');
 const cors = require('cors');
+const { triggerSOS } = require('./sos/dynamic');
 
 const app = express();
 app.use(cors()); // Enable CORS for all routes (for the PoC, allow connections from anywhere)
+app.use(express.json());
 
 const server = http.createServer(app);
 
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
+});
+
+app.post('/api/sos/trigger', async (req, res) => {
+    const { victimLat, victimLng, rejectIds = [] } = req.body || {};
+
+    if (!Number.isFinite(victimLat) || !Number.isFinite(victimLng)) {
+        return res.status(400).json({
+            error: 'victimLat and victimLng must be valid numbers.',
+        });
+    }
+    if (!Array.isArray(rejectIds)) {
+        return res.status(400).json({
+            error: 'rejectIds must be an array.',
+        });
+    }
+
+    try {
+        const result = await triggerSOS(victimLat, victimLng, rejectIds);
+        return res.status(200).json({ result });
+    } catch (error) {
+        console.error('Failed to trigger SOS:', error.message);
+        return res.status(500).json({
+            error: 'Unable to process SOS request.',
+        });
+    }
 });
 
 //Attach Socket.io to that HTTP server
@@ -54,7 +81,41 @@ io.on('connection', (socket) => {
         });
     });
 
-    // ACTION 3: Cleanup when someone closes the app
+    // ACTION 3: Victim triggers SOS helper search (dynamic radius logic in Redis/H3)
+    socket.on('trigger_sos', async (data = {}) => {
+        const { victimLat, victimLng, rejectIds = [] } = data;
+
+        if (!Number.isFinite(victimLat) || !Number.isFinite(victimLng)) {
+            socket.emit('sos_result', {
+                ok: false,
+                error: 'victimLat and victimLng must be valid numbers.',
+            });
+            return;
+        }
+        if (!Array.isArray(rejectIds)) {
+            socket.emit('sos_result', {
+                ok: false,
+                error: 'rejectIds must be an array.',
+            });
+            return;
+        }
+
+        try {
+            const result = await triggerSOS(victimLat, victimLng, rejectIds);
+            socket.emit('sos_result', {
+                ok: true,
+                result,
+            });
+        } catch (error) {
+            console.error('Socket trigger_sos failed:', error.message);
+            socket.emit('sos_result', {
+                ok: false,
+                error: 'Unable to process SOS request.',
+            });
+        }
+    });
+
+    // ACTION 4: Cleanup when someone closes the app
     socket.on('disconnect', () => {
         console.log(`User ${socket.id} disconnected.`);
         // Note: Socket.io automatically removes them from the room when they disconnect,
