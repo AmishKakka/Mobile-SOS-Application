@@ -71,3 +71,6 @@ npm run test:redis-demo
 npm run test:e2e
 npm run test:all
 ```
+## UI Design
+
+POC UI design updates in progress.
