@@ -2,12 +2,10 @@ import Redis from 'ioredis';
 import * as h3 from 'h3-js'
 
 const redis = new Redis();
-
 import { triggerSOS } from './dynamic.js';
 
-// ---------------------------------------------------------
+
 // TEST
-// ---------------------------------------------------------
 
 async function plantMockHelper(userId, lat, lng) {
     const cell = h3.latLngToCell(lat, lng, 9);
@@ -19,7 +17,7 @@ async function runTests() {
     console.log("Clearing Redis database for a clean test...\n");
     await redis.flushall();
 
-    // Test coordinates
+    // Test coordinates of Victim
     const victimLat = 33.4255;
     const victimLng = -111.9400;
 
@@ -29,17 +27,17 @@ async function runTests() {
     await plantMockHelper('user_center_1', victimLat, victimLng);
     await plantMockHelper('user_center_2', victimLat + 0.0001, victimLng + 0.0001);
 
-    // Neighborhood: Ring 1-3 (Approx 500m away)
+    // Neighborhood: Ring 1-3 (Approx 500m away from victim)
     await plantMockHelper('user_close_1', victimLat + 0.005, victimLng + 0.005);
     await plantMockHelper('user_close_2', victimLat - 0.005, victimLng - 0.005);
     await plantMockHelper('user_close_3', victimLat + 0.006, victimLng - 0.004);
 
-    // Outer Edge: Ring 10-15 (Approx 1.5 miles away)
+    // Outer Edge: Ring 10-15 (Approx 1.5 miles away from victim)
     await plantMockHelper('user_far_1', victimLat + 0.020, victimLng + 0.020);
     await plantMockHelper('user_far_2', victimLat - 0.020, victimLng - 0.020);
     await plantMockHelper('user_far_3', victimLat + 0.022, victimLng - 0.022);
 
-    // Too Far: Outside 2 miles (Should be ignored)
+    // Too Far: Outside 2 miles (Helpers outside 2 miles radius must be ignored)
     await plantMockHelper('user_ignored_1', victimLat + 0.100, victimLng + 0.100);
 
     console.log("Map Seeded Successfully!\n");
@@ -56,12 +54,12 @@ async function runTests() {
     console.log("Result B (Should NOT contain center users):", testB, "\n");
 
     console.log("SCENARIO C: Testing the Ripple Effect (2 Miles out)...");
-    // Drop the victim slightly away from the center cluster
+    // Scenario in which the victim is slightly away from the center cluster
     const testC = await triggerSOS(victimLat + 0.015, victimLng + 0.015);
     console.log("Result C (Should find the 'user_far' group):", testC, "\n");
 
     console.log("SCENARIO D: Testing Circuit Breaker (No one around)...");
-    // Drop the victim in the middle of the ocean (Lat 0, Lng 0)
+    // Scenario in which the victim is in the middle of the ocean (Lat 0, Lng 0)
     const testD = await triggerSOS(0, 0);
     console.log("Result D (Should trigger Escalation):", testD, "\n");
 
@@ -69,5 +67,5 @@ async function runTests() {
     process.exit(0);
 }
 
-// Execute the tests
+// Execute the test cases
 runTests();
