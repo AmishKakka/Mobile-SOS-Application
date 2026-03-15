@@ -4,13 +4,13 @@ import { AlertCircle, Phone, MapPin, Radio } from "lucide-react";
 export function MainDashboard() {
   const [sosActive, setSosActive] = useState(false);
 
-  // const handleTriggerSOS = () => {
-  //   setSosActive(true); 
-  // };
+  const handleTriggerSOS = () => {
+    setSosActive(true); 
+  };
 
-  // const handleCancelSOS = () => {
-  //   setSosActive(false); 
-  // };
+  const handleCancelSOS = () => {
+    setSosActive(false); 
+  };
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
