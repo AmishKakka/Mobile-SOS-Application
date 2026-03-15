@@ -4,13 +4,13 @@ import { AlertCircle, Phone, MapPin, Radio } from "lucide-react";
 export function MainDashboard() {
   const [sosActive, setSosActive] = useState(false);
 
-  const handleTriggerSOS = () => {
-    setSosActive(true);
-  };
+  // const handleTriggerSOS = () => {
+  //   setSosActive(true); 
+  // };
 
-  const handleCancelSOS = () => {
-    setSosActive(false);
-  };
+  // const handleCancelSOS = () => {
+  //   setSosActive(false); 
+  // };
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -28,6 +28,7 @@ export function MainDashboard() {
       {/* Main Content */}
       <div className="flex-1 flex flex-col items-center justify-center p-6">
         <div className="max-w-md w-full flex flex-col items-center space-y-8">
+          
           {/* Status Card */}
           {sosActive && (
             <div className="w-full bg-red-50 border-2 border-red-300 rounded-2xl p-5 shadow-lg">
