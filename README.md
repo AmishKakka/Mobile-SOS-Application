@@ -1,5 +1,51 @@
 # Mobile-SOS-Application
 
+## Project Structure
+
+```
+Mobile-SOS-Application/
+├── backend/                    # Express.js + Socket.IO server
+│   ├── src/
+│   │   ├── api/               # Layer 1: HTTP REST API
+│   │   │   ├── routes/        # Defines endpoints (POST /api/sos)
+│   │   │   ├── controllers/   # Handles Requests/Responses
+│   │   │   └── middlewares/   # JWT Auth, Error handling
+│   │   ├── sockets/           # Layer 2: Real-Time Engine
+│   │   │   ├── events/        # Individual event listeners
+│   │   │   └── socketManager.js
+│   │   ├── services/          # Layer 3: Business Logic
+│   │   │   ├── proximityService.js  # H3 k-ring expansion
+│   │   │   ├── escalationService.js # 15-min timeout logic
+│   │   │   └── firebaseService.js   # Push notifications
+│   │   ├── dal/               # Layer 4: Data Access Layer
+│   │   │   ├── mongoDb.js     # Permanent storage
+│   │   │   └── redisDb.js     # Fast GPS coordinates
+│   │   ├── models/            # Mongoose schemas
+│   │   │   ├── User.js
+│   │   │   └── Incident.js
+│   │   ├── config/            # Configuration files
+│   │   ├── utils/             # Haversine, logger
+│   │   ├── app.js             # Express setup
+│   │   └── server.js          # Main entry point
+│   ├── package.json
+│   ├── .env
+│   └── .gitignore
+│
+└── mobile-app/                # Expo + React Native app
+    ├── app/                   # Expo Router screens
+    │   ├── (tabs)/
+    │   ├── index.tsx
+    │   └── track.tsx          # Real-time tracking screen
+    ├── src/
+    │   ├── screens/
+    │   │   └── HelperMapScreen.tsx
+    │   └── services/
+    │       └── socket.ts      # Socket.IO client
+    ├── components/
+    ├── assets/
+    └── package.json
+```
+
 ## Installation
 
 1. #### Backend - We will be using Express.js as the engine working with APIs and doing the workload. Also, we have external libraries.
