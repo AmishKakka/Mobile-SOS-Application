@@ -1,0 +1,12 @@
+{
+  "users": [
+    {
+      "id": "5278",
+      "fullName": "Carl",
+      "email": "carl@gmail.com",
+      "phone": "9992221110",
+      "password": "test123",
+      "createdAt": "2026-03-18T19:54:21.026Z"
+    }
+  ]
+}

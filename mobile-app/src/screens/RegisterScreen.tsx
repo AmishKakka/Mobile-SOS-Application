@@ -1,4 +1,5 @@
 import { Feather } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
 import { useMemo, useState } from "react";
 import {
   KeyboardAvoidingView,
@@ -11,8 +12,10 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { AccountAlreadyExistsError, registerUser } from "../services/auth";
 
 export default function RegisterScreen() {
+  const router = useRouter();
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
@@ -20,6 +23,7 @@ export default function RegisterScreen() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [agreed, setAgreed] = useState(false);
   const [message, setMessage] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const hasValidEmail = email.includes("@") && email.includes(".");
   const digitCount = phone.replace(/\D/g, "").length;
@@ -35,7 +39,11 @@ export default function RegisterScreen() {
     );
   }, [agreed, confirmPassword, digitCount, fullName, hasValidEmail, password]);
 
-  function onCreateAccount() {
+  async function onCreateAccount() {
+    if (isSubmitting) {
+      return;
+    }
+
     if (!canSubmit) {
       if (!hasValidEmail) {
         setMessage("Enter a valid email address.");
@@ -53,7 +61,29 @@ export default function RegisterScreen() {
       return;
     }
 
-    setMessage("Registration UI ready.");
+    try {
+      setIsSubmitting(true);
+      setMessage("");
+
+      await registerUser({
+        fullName,
+        email,
+        phone,
+        password,
+      });
+
+      setMessage("Registration successful. Redirecting to Sign In...");
+      router.replace("/sign-in");
+    } catch (error) {
+      if (error instanceof AccountAlreadyExistsError) {
+        setMessage("Account already exists. Please sign in instead.");
+        return;
+      }
+
+      setMessage("Could not register right now. Please try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   return (
@@ -141,10 +171,10 @@ export default function RegisterScreen() {
             </View>
 
             <Pressable
-              style={[styles.ctaButton, !canSubmit && styles.ctaButtonDisabled]}
+              style={[styles.ctaButton, (!canSubmit || isSubmitting) && styles.ctaButtonDisabled]}
               onPress={onCreateAccount}
             >
-              <Text style={styles.ctaText}>Create Account</Text>
+              <Text style={styles.ctaText}>{isSubmitting ? "Creating..." : "Create Account"}</Text>
             </Pressable>
 
             {message ? <Text style={styles.message}>{message}</Text> : null}

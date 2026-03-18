@@ -11,6 +11,17 @@ services:
       retries: 10
     restart: unless-stopped
 
+  json-server:
+    image: node:20-bullseye
+    container_name: mobile-sos-json-server
+    working_dir: /data
+    command: sh -c "npx --yes json-server@1.0.0-beta.3 --watch /data/db.json --host 0.0.0.0 --port 3001"
+    volumes:
+      - ./mobile-app/mock-api:/data
+    ports:
+      - "3001:3001"
+    restart: unless-stopped
+
   mobile-app-web:
     image: node:20-bullseye
     container_name: mobile-sos-mobile-web
@@ -32,6 +43,8 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+      json-server:
+        condition: service_started
     stdin_open: true
     tty: true
 
