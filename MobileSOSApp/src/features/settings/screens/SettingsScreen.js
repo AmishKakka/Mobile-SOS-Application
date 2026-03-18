@@ -24,8 +24,8 @@ const SettingsScreen = ({ navigation }) => {
           <Switch 
             value={isAvailable} 
             onValueChange={setIsAvailable} 
-            trackColor={{ false: '#767577', true: '#81b0ff' }}
-            thumbColor={isAvailable ? '#007AFF' : '#f4f3f4'}
+            trackColor={{ false: '#e5e7eb', true: '#fca5a5' }}
+            thumbColor={isAvailable ? '#dc2626' : '#f3f4f6'}
           />
         </View>
       </View>
@@ -55,19 +55,19 @@ const SettingsScreen = ({ navigation }) => {
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f5f7fa' },
+  container: { flex: 1, backgroundColor: '#f9fafb' },
   header: { alignItems: 'center', padding: 30, backgroundColor: '#fff', marginBottom: 20 },
   profilePic: { width: 80, height: 80, borderRadius: 40, marginBottom: 10 },
-  userName: { fontSize: 22, fontWeight: 'bold' },
-  userEmail: { fontSize: 14, color: '#666' },
+  userName: { fontSize: 24, fontWeight: 'bold', color: '#111827' },
+  userEmail: { fontSize: 14, color: '#6b7280' },
   section: { backgroundColor: '#fff', marginBottom: 20, paddingVertical: 10 },
   toggleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20 },
-  toggleTitle: { fontSize: 16, fontWeight: '600' },
-  toggleSub: { fontSize: 13, color: '#666', marginTop: 4 },
-  menuItem: { padding: 20, borderBottomWidth: 1, borderBottomColor: '#eee' },
-  menuText: { fontSize: 16 },
-  helperItem: { backgroundColor: '#eef2ff' },
-  helperText: { fontSize: 16, color: '#4f46e5', fontWeight: '600' }
+  toggleTitle: { fontSize: 16, fontWeight: '700', color: '#111827' },
+  toggleSub: { fontSize: 13, color: '#6b7280', marginTop: 4 },
+  menuItem: { padding: 20, borderBottomWidth: 1, borderBottomColor: '#f3f4f6' },
+  menuText: { fontSize: 16, color: '#1f2937', fontWeight: '500' },
+  helperItem: { backgroundColor: '#fef2f2', borderBottomWidth: 0 },
+  helperText: { fontSize: 16, color: '#dc2626', fontWeight: '700', textAlign: 'center' }
 });
 
 export default SettingsScreen;
