@@ -34,7 +34,7 @@ const SettingsScreen = ({ navigation }) => {
         <TouchableOpacity style={styles.menuItem} onPress={() => navigation.navigate('EditProfile')}>
           <Text style={styles.menuText}>Edit Personal Details</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.menuItem}>
+        <TouchableOpacity style={styles.menuItem} onPress={() => navigation.navigate('EmergencyContacts')}>
           <Text style={styles.menuText}>Emergency Contacts (0/5)</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.menuItem}>
