@@ -1,17 +1,19 @@
 import React, { useState } from 'react';
 import { View, Text, TextInput, StyleSheet, TouchableOpacity, ScrollView, SafeAreaView, Alert } from 'react-native';
 
-const EmergencyContactsScreen = () => {
-  const [contacts, setContacts] = useState([
+type Contact = { id: string; name: string; phone: string; relation?: string };
+
+const EmergencyContactsScreen: React.FC = () => {
+  const [contacts, setContacts] = useState<Contact[]>([
     { id: '1', name: 'Sarah Mason', phone: '(555) 987-6543', relation: 'Mother' },
     { id: '2', name: 'Robert Mason', phone: '(555) 123-4567', relation: 'Father' }
   ]);
 
   const [showAddForm, setShowAddForm] = useState(false);
-  const [newContact, setNewContact] = useState({ name: '', phone: '', relation: '' });
+  const [newContact, setNewContact] = useState<{ name: string; phone: string; relation: string }>({ name: '', phone: '', relation: '' });
 
   // Handle removing a contact
-  const removeContact = (idToRemove) => {
+  const removeContact = (idToRemove: string) => {
     setContacts(contacts.filter(contact => contact.id !== idToRemove));
   };
 

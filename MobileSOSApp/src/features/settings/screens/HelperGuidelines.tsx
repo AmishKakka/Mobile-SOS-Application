@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity } from 'react-native';
 
-const HelperGuidelinesScreen = ({ route }) => {
-  const initialSection = route.params?.openSection || 'community';
-  const [expandedSection, setExpandedSection] = useState(initialSection);
+type HelperGuidelinesProps = { route: { params?: { openSection?: string } } };
 
-  const toggleSection = (sectionId) => {
+const HelperGuidelinesScreen: React.FC<HelperGuidelinesProps> = ({ route }) => {
+  const initialSection = route.params?.openSection || 'community';
+  const [expandedSection, setExpandedSection] = useState<string | null>(initialSection);
+
+  const toggleSection = (sectionId: string) => {
     setExpandedSection(expandedSection === sectionId ? null : sectionId);
   };
 
@@ -63,7 +65,14 @@ const HelperGuidelinesScreen = ({ route }) => {
 
 // --- SUB-COMPONENTS ---
 
-const CollapsibleSection = ({ title, emoji, isExpanded, onPress, children }) => (
+type CollapsibleSectionProps = React.PropsWithChildren<{
+  title: string;
+  emoji: string;
+  isExpanded: boolean | null;
+  onPress: () => void;
+}>;
+
+const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({ title, emoji, isExpanded, onPress, children }) => (
   <View style={[styles.accordionContainer, isExpanded && styles.accordionContainerActive]}>
     <TouchableOpacity style={styles.accordionHeader} onPress={onPress} activeOpacity={0.7}>
       <View style={styles.headerLeft}>
@@ -81,7 +90,9 @@ const CollapsibleSection = ({ title, emoji, isExpanded, onPress, children }) => 
   </View>
 );
 
-const PointerCard = ({ number, title, desc }) => (
+type PointerCardProps = { number: string; title: string; desc: string };
+
+const PointerCard: React.FC<PointerCardProps> = ({ number, title, desc }) => (
   <View style={styles.pointerCard}>
     <View style={styles.numberCircle}>
       <Text style={styles.numberText}>{number}</Text>

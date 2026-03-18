@@ -3,9 +3,9 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
 import SettingsScreen from '../features/settings/screens/SettingsScreen';
 import EditProfileScreen from '../features/settings/screens/EditProfileScreen';
-import HelperDashboardScreen from '../features/settings/screens/HelperDashboardScreen';
+import HelperDashboardScreen from '../features/settings/screens/HelperDashBoard';
 
-import HelperGuidelinesScreen from '../features/settings/screens/HelperGuidelinesScreen'; 
+import HelperGuidelinesScreen from '../features/settings/screens/HelperGuidelines'; 
 
 const Stack = createNativeStackNavigator();
 
@@ -17,8 +17,7 @@ const SettingsStack = () => {
         headerStyle: { backgroundColor: '#fff' },
         headerTintColor: '#0f172a',
         headerTitleStyle: { fontWeight: 'bold' },
-        headerBackTitleVisible: false, 
-      }}
+        headerShadowVisible: true,}}
     >
       <Stack.Screen name="SettingsHome" component={SettingsScreen} options={{ title: 'Settings' }} />
       <Stack.Screen name="EditProfile" component={EditProfileScreen} options={{ title: 'Edit Profile' }} />

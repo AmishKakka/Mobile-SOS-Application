@@ -1,7 +1,11 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, Switch, TouchableOpacity, SafeAreaView, Image } from 'react-native';
 
-const SettingsScreen = ({ navigation }) => {
+type NavigationLike = { navigate: (screen: string, params?: Record<string, any>) => void };
+
+type SettingsScreenProps = { navigation: NavigationLike };
+
+const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
   const [isAvailable, setIsAvailable] = useState(true);
 
   return (
@@ -43,10 +47,7 @@ const SettingsScreen = ({ navigation }) => {
       </View>
 
       <View style={styles.section}>
-        <TouchableOpacity 
-          style={[styles.menuItem, styles.helperItem]} 
-          onPress={() => navigation.navigate('HelperDashboard')}
-        >
+        <TouchableOpacity style={[styles.menuItem, styles.helperItem]} onPress={() => navigation.navigate('HelperDashboard')}>
           <Text style={styles.helperText}>Community Helper Dashboard</Text>
         </TouchableOpacity>
       </View>

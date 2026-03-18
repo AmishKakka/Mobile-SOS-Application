@@ -1,7 +1,11 @@
 import React from 'react';
 import { View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity } from 'react-native';
 
-const HelperDashboardScreen = ({ navigation }) => {
+type NavigationLike = { navigate: (screen: string, params?: Record<string, any>) => void };
+
+type HelperDashboardScreenProps = { navigation: NavigationLike };
+
+const HelperDashboardScreen: React.FC<HelperDashboardScreenProps> = ({ navigation }) => {
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scroll}>
@@ -69,7 +73,15 @@ const HelperDashboardScreen = ({ navigation }) => {
   );
 };
 
-const InfoCard = ({ emoji, title, desc, bg, onPress }) => (
+type InfoCardProps = {
+  emoji: string;
+  title: string;
+  desc: string;
+  bg?: string;
+  onPress?: () => void;
+};
+
+const InfoCard: React.FC<InfoCardProps> = ({ emoji, title, desc, bg, onPress }) => (
   <TouchableOpacity style={[styles.infoCard, styles.shadow]} onPress={onPress} activeOpacity={0.7}>
     <View style={[styles.infoIconBox, { backgroundColor: bg }]}>
       <Text style={styles.infoEmoji}>{emoji}</Text>
