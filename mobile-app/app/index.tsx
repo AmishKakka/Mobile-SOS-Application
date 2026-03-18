@@ -1,1 +1,1 @@
-export { default } from "../src/screens/HelperMapScreen";
+export { default } from "../src/screens/RegisterScreen";
