@@ -118,8 +118,90 @@ async function testRootEndpoint() {
     console.log('PASS: Root endpoint served index.html');
 }
 
+async function testHttpSosValidation() {
+    console.log('SCENARIO B: Testing HTTP SOS payload validation...');
+    const invalidLatResponse = await fetch(`${SERVER_URL}/api/sos/trigger`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            victimLat: 'invalid',
+            victimLng: -111.94,
+            rejectIds: [],
+        }),
+    });
+    assert.strictEqual(invalidLatResponse.status, 400, 'Invalid victim coords should return HTTP 400.');
+    const invalidLatBody = await invalidLatResponse.json();
+    assert.ok(
+        typeof invalidLatBody.error === 'string' && invalidLatBody.error.includes('valid numbers'),
+        'Expected validation error for invalid victim coordinates.'
+    );
+
+    const invalidRejectIdsResponse = await fetch(`${SERVER_URL}/api/sos/trigger`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            victimLat: 33.4255,
+            victimLng: -111.94,
+            rejectIds: 'helper_1',
+        }),
+    });
+    assert.strictEqual(invalidRejectIdsResponse.status, 400, 'Invalid rejectIds should return HTTP 400.');
+    const invalidRejectIdsBody = await invalidRejectIdsResponse.json();
+    assert.strictEqual(
+        invalidRejectIdsBody.error,
+        'rejectIds must be an array.',
+        'Expected specific validation error for rejectIds type.'
+    );
+
+    console.log('PASS: HTTP SOS validation guarded malformed payloads');
+}
+
+async function testSocketSosValidation() {
+    console.log('SCENARIO C: Testing socket SOS payload validation...');
+    const socket = io(SERVER_URL, {
+        transports: ['websocket'],
+        forceNew: true,
+        reconnection: false,
+    });
+
+    try {
+        await waitForSocketConnect(socket, CONNECT_TIMEOUT_MS);
+
+        const invalidLatPromise = waitForSocketEvent(socket, 'sos_result', EVENT_TIMEOUT_MS);
+        socket.emit('trigger_sos', {
+            victimLat: 'invalid',
+            victimLng: -111.94,
+            rejectIds: [],
+        });
+        const invalidLatPayload = await invalidLatPromise;
+        assert.strictEqual(invalidLatPayload.ok, false, 'Invalid socket coords should fail validation.');
+        assert.ok(
+            typeof invalidLatPayload.error === 'string' && invalidLatPayload.error.includes('valid numbers'),
+            'Expected socket validation error for invalid coordinates.'
+        );
+
+        const invalidRejectIdsPromise = waitForSocketEvent(socket, 'sos_result', EVENT_TIMEOUT_MS);
+        socket.emit('trigger_sos', {
+            victimLat: 33.4255,
+            victimLng: -111.94,
+            rejectIds: 'helper_1',
+        });
+        const invalidRejectIdsPayload = await invalidRejectIdsPromise;
+        assert.strictEqual(invalidRejectIdsPayload.ok, false, 'Invalid rejectIds should fail socket validation.');
+        assert.strictEqual(
+            invalidRejectIdsPayload.error,
+            'rejectIds must be an array.',
+            'Expected socket validation error for rejectIds type.'
+        );
+
+        console.log('PASS: Socket SOS validation guarded malformed payloads');
+    } finally {
+        socket.disconnect();
+    }
+}
+
 async function testSocketRoomRouting() {
-    console.log('SCENARIO B: Testing Socket.io room routing...');
+    console.log('SCENARIO D: Testing Socket.io room routing...');
     const socketConfig = {
         transports: ['websocket'],
         forceNew: true,
@@ -185,6 +267,8 @@ async function runTests() {
     try {
         await waitForServerReady(serverProcess, START_TIMEOUT_MS);
         await testRootEndpoint();
+        await testHttpSosValidation();
+        await testSocketSosValidation();
         await testSocketRoomRouting();
         console.log('ALL SERVER TESTS PASSED');
     } catch (error) {

@@ -189,6 +189,7 @@ async function testHttpSosTrigger() {
             rejectIds: ['helper_1', 'helper_2'],
         }),
     });
+    assert.strictEqual(rejectedResponse.status, 200, 'Expected HTTP 200 for rejected helper flow.');
     const rejectedBody = await rejectedResponse.json();
     const userIds = rejectedBody.result.map((item) => item.userId);
     assert.ok(!userIds.includes('helper_1'), 'Rejected helper_1 should be excluded.');
@@ -208,6 +209,39 @@ async function testHttpSosTrigger() {
         fallbackBody.result.status,
         'CALL_EMERGENCY_CONTACTS',
         'Expected escalation status when no helpers are found.'
+    );
+
+    const invalidLatResponse = await fetch(`${SERVER_URL}/api/sos/trigger`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            victimLat: 'invalid',
+            victimLng,
+            rejectIds: [],
+        }),
+    });
+    assert.strictEqual(invalidLatResponse.status, 400, 'Invalid victim coords should return HTTP 400.');
+    const invalidLatBody = await invalidLatResponse.json();
+    assert.ok(
+        typeof invalidLatBody.error === 'string' && invalidLatBody.error.includes('valid numbers'),
+        'Expected validation error for invalid victim coordinates.'
+    );
+
+    const invalidRejectIdsResponse = await fetch(`${SERVER_URL}/api/sos/trigger`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            victimLat,
+            victimLng,
+            rejectIds: 'helper_1',
+        }),
+    });
+    assert.strictEqual(invalidRejectIdsResponse.status, 400, 'Invalid rejectIds should return HTTP 400.');
+    const invalidRejectIdsBody = await invalidRejectIdsResponse.json();
+    assert.strictEqual(
+        invalidRejectIdsBody.error,
+        'rejectIds must be an array.',
+        'Expected specific validation error for rejectIds type.'
     );
 
     console.log('PASS: HTTP SOS trigger validated');
@@ -247,6 +281,24 @@ async function testSocketSosTrigger() {
         assert.ok(
             typeof invalidPayload.error === 'string' && invalidPayload.error.includes('valid numbers'),
             'Expected useful validation error message.'
+        );
+
+        const invalidRejectIdsPromise = waitForSocketEvent(socket, 'sos_result', EVENT_TIMEOUT_MS);
+        socket.emit('trigger_sos', {
+            victimLat: 33.4255,
+            victimLng: -111.94,
+            rejectIds: 'helper_1',
+        });
+        const invalidRejectIdsPayload = await invalidRejectIdsPromise;
+        assert.strictEqual(
+            invalidRejectIdsPayload.ok,
+            false,
+            'Expected validation failure when rejectIds is not an array.'
+        );
+        assert.strictEqual(
+            invalidRejectIdsPayload.error,
+            'rejectIds must be an array.',
+            'Expected useful validation error for rejectIds.'
         );
 
         console.log('PASS: Socket SOS trigger validated');

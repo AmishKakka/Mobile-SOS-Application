@@ -71,6 +71,28 @@ npm run test:redis-demo
 npm run test:e2e
 npm run test:all
 ```
+
+### Test Coverage Matrix
+
+| Command | Redis required | What it validates |
+| --- | --- | --- |
+| `npm run test:server` | No | Root endpoint response, Socket room routing/isolation, HTTP `/api/sos/trigger` payload validation, and socket `trigger_sos` payload validation. |
+| `npm run test:redis-demo` | Yes | Redis hash/set update flow in `RedisDemo.js`, including location key replacement and `last-location` snapshot updates. |
+| `npm run test:e2e` | Yes | End-to-end HTTP + socket SOS behavior with seeded helper data, reject-list exclusion, sorted nearest-helper results, fallback escalation, and malformed payload handling. |
+| `npm run test:all` | Yes | Runs all backend test suites in sequence. |
+
+### Notes
+
+- Start Redis before running Redis-dependent suites:
+
+```sh
+docker compose up -d redis
+```
+
+- The validation tests now explicitly cover:
+  - non-numeric `victimLat` / `victimLng`
+  - non-array `rejectIds`
+
 ## UI Design
 
 POC UI design updates in progress.
