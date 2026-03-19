@@ -1,12 +1,12 @@
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import React from 'react';
-import EditProfileScreen from '../features/settings/screens/EditProfileScreen';
-import EmergencyContactsScreen from '../features/settings/screens/EmergencyContactsScreen';
-import HelperDashboardScreen from '../features/settings/screens/HelperDashBoard';
-import SettingsScreen from '../features/settings/screens/SettingsScreen';
+import EditProfileScreen from '../features/screens/EditProfileScreen';
+import EmergencyContactsScreen from '../features/screens/EmergencyContactsScreen';
+import HelperDashboardScreen from '../features/screens/HelperDashBoard';
+import SettingsScreen from '../features/screens/SettingsScreen';
 import MainDashboard from '../features/sos-tracking/components/MainDashboard';
 
-import HelperGuidelinesScreen from '../features/settings/screens/HelperGuidelines';
+import HelperGuidelinesScreen from '../features/screens/HelperGuidelines';
 
 const Stack = createNativeStackNavigator();
 
