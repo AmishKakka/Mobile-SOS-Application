@@ -1,6 +1,6 @@
 import React from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-
+import EmergencyContactsScreen from '../features/settings/screens/EmergencyContactsScreen';
 import SettingsScreen from '../features/settings/screens/SettingsScreen';
 import EditProfileScreen from '../features/settings/screens/EditProfileScreen';
 import HelperDashboardScreen from '../features/settings/screens/HelperDashBoard';
@@ -23,11 +23,16 @@ const SettingsStack = () => {
       <Stack.Screen name="EditProfile" component={EditProfileScreen} options={{ title: 'Edit Profile' }} />
       <Stack.Screen name="HelperDashboard" component={HelperDashboardScreen} options={{ title: 'Helper Dashboard', headerShadowVisible: false }} />
       
-      {/* The single unified screen */}
       <Stack.Screen 
         name="HelperGuidelines" 
         component={HelperGuidelinesScreen} 
         options={{ title: 'Guidelines', headerShadowVisible: false, headerStyle: { backgroundColor: '#f9fafb' } }} 
+      />
+
+      <Stack.Screen
+        name="EmergencyContacts"
+        component={EmergencyContactsScreen}
+        options={{ title: 'Emergency Contacts' }}
       />
 
     </Stack.Navigator>
