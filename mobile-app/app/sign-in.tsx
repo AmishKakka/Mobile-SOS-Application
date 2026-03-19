@@ -1,1 +1,1 @@
-export { default } from "../src/screens/SignInPlaceholderScreen";
+export { default } from "../src/screens/SignInScreen";

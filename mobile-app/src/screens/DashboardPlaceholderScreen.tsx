@@ -1,11 +1,11 @@
 import { SafeAreaView, StyleSheet, Text, View } from "react-native";
 
-export default function SignInPlaceholderScreen() {
+export default function DashboardPlaceholderScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
-        <Text style={styles.title}>Sign In Page</Text>
-        <Text style={styles.subtitle}>Placeholder component. Sign In UI will be added next.</Text>
+        <Text style={styles.title}>Dashboard</Text>
+        <Text style={styles.subtitle}>Placeholder screen. Dashboard UI will be added next.</Text>
       </View>
     </SafeAreaView>
   );

@@ -179,9 +179,12 @@ export default function RegisterScreen() {
 
             {message ? <Text style={styles.message}>{message}</Text> : null}
 
-            <Text style={styles.footerText}>
-              Already registered? <Text style={styles.signInText}>Sign In</Text>
-            </Text>
+            <View style={styles.footerRow}>
+              <Text style={styles.footerText}>Already registered? </Text>
+              <Pressable onPress={() => router.push("/sign-in")}>
+                <Text style={styles.signInText}>Sign In</Text>
+              </Pressable>
+            </View>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -389,10 +392,14 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   footerText: {
-    marginTop: 16,
-    textAlign: "center",
     color: "#77849B",
     fontSize: 14,
+  },
+  footerRow: {
+    marginTop: 16,
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
   },
   signInText: {
     color: "#0E1E3A",
