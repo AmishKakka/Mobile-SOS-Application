@@ -26,7 +26,7 @@
     npx @react-native-community/cli@latest init frontend
     ```
 
-    After updating your code run the commands below and it takes 1–3 minutes to build the app and launch it on the virtual phone.
+    After updating your code, run the commands below; it takes 1–3 minutes to build the app and launch it on the virtual phone.
 
     Run instructions for Android:
 
