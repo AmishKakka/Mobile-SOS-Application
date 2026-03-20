@@ -1,150 +1,154 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { 
-    View, 
-    Text, 
-    StyleSheet, 
-    TouchableOpacity, 
-    Linking, 
-    Animated, 
-    Easing 
-} from 'react-native';
+import { View, Text, StyleSheet, Dimensions, Linking, Alert, TouchableOpacity } from 'react-native';
+import MapView, { Marker, Circle } from 'react-native-maps';
 
 export default function DynamicProximitySearch({ socket, incidentId, onCancel }) {
-    // State to manage the UI text and escalation phase
-    const [searchRadius, setSearchRadius] = useState('250 meters');
-    const [statusMessage, setStatusMessage] = useState('Alerting nearby helpers...');
-    const [isEscalated, setIsEscalated] = useState(false);
+    // --- 1. STATE MANAGEMENT ---
+    const [radiusInMeters, setRadiusInMeters] = useState(250); // Start at 250m
+    const [statusText, setStatusText] = useState("Broadcasting to nearby community...");
+    const [isEscalated, setIsEscalated] = useState(false); // Tracks if 911 mode is active
 
-    // Animation value for the "Radar Pulse" effect
-    const pulseAnim = useRef(new Animated.Value(0)).current;
+    // For testing, we hardcode the user's location (e.g., Central Park)
+    // In production, this would come from your device's actual GPS
+    const userLocation = {
+        latitude: 40.7812,
+        longitude: -73.9665,
+    };
 
+    // We use a "ref" to control the map (e.g., automatically zooming out as the circle grows)
+    const mapRef = useRef(null);
+
+    // --- 2. THE SOCKET LISTENER (The Brains) ---
     useEffect(() => {
-        // 1. Start the repeating radar animation
-        startPulseAnimation();
+        if (!socket) return;
 
-        // 2. Listen for the backend expanding the Uber H3 radius
+        // Listener A: The backend expanded the search ring!
         socket.on('search_expanded', (data) => {
-            // Expected data from backend: { radius: '500 meters', message: 'Expanding search...' }
-            setSearchRadius(data.radius);
-            setStatusMessage('No one accepted yet. Expanding search area...');
+            console.log(`[Socket] Expanding radar to ${data.radius} meters`);
+
+            // 1. Update the radius state (this makes the red circle physically grow on the map)
+            setRadiusInMeters(data.radius);
+
+            // 2. Update the text the user sees
+            setStatusText(`Expanded search to ${data.radius}m. Still looking...`);
+
+            // 3. Automatically zoom the map out so the new, larger circle fits on the screen!
+            if (mapRef.current) {
+                // We calculate a rough "zoom level" based on the radius
+                const zoomDelta = (data.radius / 111000) * 2.5;
+                mapRef.current.animateToRegion({
+                    latitude: userLocation.latitude,
+                    longitude: userLocation.longitude,
+                    latitudeDelta: zoomDelta,
+                    longitudeDelta: zoomDelta,
+                }, 1000); // Animate the zoom over 1 second
+            }
         });
 
-        // 3. Listen for the absolute failure event (2-mile limit reached)
+        // Listener B: Total failure. No helpers found after maximum expansion.
         socket.on('max_radius_reached', () => {
-            handleAutoEscalation();
+            console.log("[Socket] Max radius reached. Escalating to 911.");
+            setIsEscalated(true);
+            setStatusText("No community helpers available.");
+            trigger911Call(); // Automatically trigger the phone dialer!
         });
 
-        // Cleanup listeners when component unmounts
+        // Cleanup: Stop listening when the component unmounts
         return () => {
             socket.off('search_expanded');
             socket.off('max_radius_reached');
         };
-    }, []);
+    }, [socket]); // This hook only re-runs if the 'socket' object changes
 
-    const startPulseAnimation = () => {
-        pulseAnim.setValue(0);
-        Animated.loop(
-            Animated.timing(pulseAnim, {
-                toValue: 1,
-                duration: 2000,
-                easing: Easing.out(Easing.ease),
-                useNativeDriver: true,
-            })
-        ).start();
+    // --- 3. NATIVE HARDWARE INTERACTION (The 911 Dialer) ---
+    const trigger911Call = () => {
+        const emergencyNumber = "tel:911";
+
+        // We skip the 'canOpenURL' check entirely to bypass modern OS security blocks.
+        // We just force the OS to handle the 'tel:' link directly!
+        Linking.openURL(emergencyNumber)
+            .catch(err => {
+                console.error("An error occurred trying to dial 911", err);
+                Alert.alert("Error", "Could not open the phone dialer.");
+            });
     };
 
-    // The core logic for your Sprint Task
-    const handleAutoEscalation = () => {
-        setIsEscalated(true);
-        setStatusMessage('No helpers available in your area.');
-        
-        // This is the native API that forces the phone's dial pad to open
-        // with 911 pre-filled. It does NOT automatically place the call (OS restriction),
-        // but it puts the user one tap away from safety.
-        Linking.openURL('tel:911').catch((err) => 
-            console.error('Error opening dialer:', err)
-        );
-    };
-
-    // Calculate animation styles
-    const pulseStyle = {
-        transform: [{
-            scale: pulseAnim.interpolate({
-                inputRange: [0, 1],
-                outputRange: [1, 3] // Expands from 1x to 3x size
-            })
-        }],
-        opacity: pulseAnim.interpolate({
-            inputRange: [0, 1],
-            outputRange: [0.8, 0] // Fades out as it expands
-        })
-    };
-
+    // --- 4. THE UI RENDER ---
     return (
         <View style={styles.container}>
-            {!isEscalated ? (
-                // --- PHASE 1: SEARCHING FOR HELPERS ---
-                <View style={styles.searchingContainer}>
-                    <View style={styles.radarWrapper}>
-                        <Animated.View style={[styles.pulseCircle, pulseStyle]} />
-                        <View style={styles.centerDot} />
-                    </View>
-                    
-                    <Text style={styles.statusTitle}>Searching...</Text>
-                    <Text style={styles.statusMessage}>{statusMessage}</Text>
-                    <Text style={styles.radiusText}>Current Radius: {searchRadius}</Text>
-                    
-                    <TouchableOpacity style={styles.cancelBtn} onPress={onCancel}>
-                        <Text style={styles.cancelBtnText}>Cancel SOS</Text>
-                    </TouchableOpacity>
-                </View>
-            ) : (
-                // --- PHASE 2: AUTO-ESCALATION (NO HELPERS FOUND) ---
-                <View style={styles.escalatedContainer}>
-                    <Text style={styles.alertIcon}>⚠️</Text>
-                    <Text style={styles.escalatedTitle}>Community Unavailable</Text>
-                    <Text style={styles.statusMessage}>
-                        We expanded the search to 2 miles but could not find an available helper.
-                    </Text>
+            {/* The Map Layer */}
+            <MapView
+                ref={mapRef}
+                style={styles.map}
+                initialRegion={{
+                    latitude: userLocation.latitude,
+                    longitude: userLocation.longitude,
+                    latitudeDelta: 0.01, // Initial tight zoom
+                    longitudeDelta: 0.01,
+                }}
+                showsUserLocation={true} // Shows the little blue dot if GPS is enabled
+            >
+                {/* A pin showing exactly where the SOS happened */}
+                <Marker coordinate={userLocation} pinColor="red" />
 
-                    <TouchableOpacity 
-                        style={styles.emergencyBtn} 
-                        onPress={() => Linking.openURL('tel:911')}
-                    >
-                        <Text style={styles.emergencyBtnText}>Call 911 Now</Text>
-                    </TouchableOpacity>
+                {/* The Radar Ring. It re-renders instantly every time 'radiusInMeters' changes! */}
+                {!isEscalated && (
+                    <Circle
+                        center={userLocation}
+                        radius={radiusInMeters}
+                        fillColor="rgba(255, 0, 0, 0.15)" // Transparent red inside
+                        strokeColor="rgba(255, 0, 0, 0.8)" // Solid red border
+                        strokeWidth={2}
+                    />
+                )}
+            </MapView>
 
-                    <TouchableOpacity style={styles.contactBtn}>
-                        <Text style={styles.contactBtnText}>Text Emergency Contacts</Text>
-                    </TouchableOpacity>
-                </View>
-            )}
+            {/* The Floating Status Dashboard */}
+            <View style={[styles.dashboard, isEscalated ? styles.dashboardEscalated : null]}>
+                <Text style={styles.title}>
+                    {isEscalated ? "⚠️ ESCALATION TRIGGERED" : "🚨 SOS ACTIVE"}
+                </Text>
+
+                <Text style={styles.status}>{statusText}</Text>
+
+                {!isEscalated && (
+                    <Text style={styles.radiusText}>Current Radar: {radiusInMeters}m</Text>
+                )}
+
+                {/* Manual 911 Override Button (Always good to have a backup!) */}
+                <TouchableOpacity style={styles.callButton} onPress={trigger911Call}>
+                    <Text style={styles.callButtonText}>CALL 911 NOW</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity style={styles.cancelButton} onPress={onCancel}>
+                    <Text style={styles.cancelButtonText}>Cancel SOS</Text>
+                </TouchableOpacity>
+            </View>
         </View>
     );
 }
 
+// --- 5. STYLES ---
 const styles = StyleSheet.create({
-    container: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#fff', padding: 20 },
-    searchingContainer: { alignItems: 'center', width: '100%' },
-    escalatedContainer: { alignItems: 'center', width: '100%', padding: 20, backgroundColor: '#ffebee', borderRadius: 15 },
-    
-    // Radar Animation Styles
-    radarWrapper: { width: 100, height: 100, justifyContent: 'center', alignItems: 'center', marginBottom: 40 },
-    pulseCircle: { position: 'absolute', width: 80, height: 80, borderRadius: 40, backgroundColor: '#ef5350' },
-    centerDot: { width: 24, height: 24, borderRadius: 12, backgroundColor: '#d32f2f', elevation: 5 },
-    
-    // Typography
-    statusTitle: { fontSize: 24, fontWeight: 'bold', color: '#333', marginBottom: 10 },
-    escalatedTitle: { fontSize: 24, fontWeight: 'bold', color: '#d32f2f', marginBottom: 15, textAlign: 'center' },
-    statusMessage: { fontSize: 16, color: '#666', textAlign: 'center', marginBottom: 10 },
-    radiusText: { fontSize: 18, fontWeight: '600', color: '#1976d2', marginTop: 10, marginBottom: 30 },
-    alertIcon: { fontSize: 50, marginBottom: 10 },
-    
-    // Buttons
-    cancelBtn: { paddingVertical: 12, paddingHorizontal: 30, borderRadius: 25, backgroundColor: '#eeeeee' },
-    cancelBtnText: { color: '#333', fontSize: 16, fontWeight: 'bold' },
-    emergencyBtn: { width: '100%', padding: 18, borderRadius: 10, backgroundColor: '#d32f2f', alignItems: 'center', marginBottom: 15, marginTop: 20 },
-    emergencyBtnText: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
-    contactBtn: { width: '100%', padding: 18, borderRadius: 10, backgroundColor: '#fff', borderWidth: 2, borderColor: '#d32f2f', alignItems: 'center' },
-    contactBtnText: { color: '#d32f2f', fontSize: 18, fontWeight: 'bold' }
+    container: { flex: 1 },
+    map: { width: Dimensions.get('window').width, height: Dimensions.get('window').height },
+    dashboard: {
+        position: 'absolute', bottom: 40, left: 20, right: 20,
+        backgroundColor: 'white', padding: 20, borderRadius: 15,
+        shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 5, elevation: 8,
+        alignItems: 'center'
+    },
+    dashboardEscalated: {
+        backgroundColor: '#ffebee', // Light red background when escalated
+        borderColor: 'red', borderWidth: 2
+    },
+    title: { fontSize: 22, fontWeight: 'bold', color: '#d32f2f', marginBottom: 8 },
+    status: { fontSize: 16, color: '#333', textAlign: 'center', marginBottom: 10 },
+    radiusText: { fontSize: 16, fontWeight: '700', color: '#555', marginBottom: 15 },
+    callButton: {
+        backgroundColor: '#d32f2f', paddingVertical: 12, paddingHorizontal: 30, borderRadius: 25, width: '100%', marginBottom: 10
+    },
+    callButtonText: { color: 'white', fontSize: 18, fontWeight: 'bold', textAlign: 'center' },
+    cancelButton: { paddingVertical: 10 },
+    cancelButtonText: { color: '#666', fontSize: 16, textDecorationLine: 'underline' }
 });

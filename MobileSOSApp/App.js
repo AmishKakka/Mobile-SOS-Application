@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { SafeAreaView, Button, View, Text } from 'react-native';
 import DynamicProximitySearch from './src/features/sos-tracking/components/DynamicProximitySearch';
 
+// 1. THE FAKE BACKEND (Mock Socket)
 const createMockSocket = () => {
     const listeners = {};
     return {
@@ -21,41 +22,44 @@ export default function App() {
         const socket = createMockSocket();
         setMockSocket(socket);
         setIsSosActive(true);
-        
-        // 1. After 3 seconds, simulate the backend expanding to Ring 1
-        setTimeout(() => {
-            console.log("Backend Simulator: Expanding to 500 meters...");
-            socket.simulateBackendFiring('search_expanded', { radius: '500 meters' });
-        }, 3000);
 
-        // 2. After 6 seconds, simulate expanding to Ring 2
+        // --- THE BACKEND SIMULATION TIMELINE ---
+
         setTimeout(() => {
-            console.log("Backend Simulator: Expanding to 1 mile...");
-            socket.simulateBackendFiring('search_expanded', { radius: '1 mile' });
+            socket.simulateBackendFiring('search_expanded', { radius: 250 });
+        }, 2000);
+
+        setTimeout(() => {
+            socket.simulateBackendFiring('search_expanded', { radius: 500 });
+        }, 4000);
+
+        setTimeout(() => {
+            socket.simulateBackendFiring('search_expanded', { radius: 1000 });
         }, 6000);
 
-        // 3. After 9 seconds, simulate the total failure (triggers the 911 UI)
         setTimeout(() => {
-            console.log("Backend Simulator: Max radius reached. Triggering escalation!");
+            socket.simulateBackendFiring('search_expanded', { radius: 1500 });
+        }, 8000);
+
+        setTimeout(() => {
             socket.simulateBackendFiring('max_radius_reached');
-        }, 9000);
+        }, 10000);
     };
 
     return (
-        <SafeAreaView style={{ flex: 1, backgroundColor: '#f5f5f5', justifyContent: 'center' }}>
+        <SafeAreaView style={{ flex: 1, backgroundColor: '#f5f5f5' }}>
             {!isSosActive ? (
-                <View style={{ padding: 20 }}>
-                    <Text style={{ fontSize: 20, textAlign: 'center', marginBottom: 20 }}>
-                        Isolated Component Test
+                <View style={{ flex: 1, justifyContent: 'center', padding: 20 }}>
+                    <Text style={{ fontSize: 24, textAlign: 'center', marginBottom: 30 }}>
+                        Sprint 4: Radar Simulation
                     </Text>
                     <Button title="🚨 SIMULATE SOS TRIGGER" onPress={triggerTestSOS} color="red" />
                 </View>
             ) : (
-                // Render YOUR component and feed it the fake socket!
-                <DynamicProximitySearch 
-                    socket={mockSocket} 
-                    incidentId="test_incident_999" 
-                    onCancel={() => setIsSosActive(false)} 
+                <DynamicProximitySearch
+                    socket={mockSocket}
+                    incidentId="test_incident_999"
+                    onCancel={() => setIsSosActive(false)}
                 />
             )}
         </SafeAreaView>
