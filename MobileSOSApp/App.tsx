@@ -3,6 +3,7 @@ import {
   SafeAreaProvider,
   useSafeAreaInsets,
 } from 'react-native-safe-area-context';
+
 import { NavigationContainer } from '@react-navigation/native';
 import React from 'react';
 import SettingsStack from './src/navigation/SettingsStack';

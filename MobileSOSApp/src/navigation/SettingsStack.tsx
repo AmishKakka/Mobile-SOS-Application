@@ -7,6 +7,7 @@ import HelperDashboardScreen from '../features/screens/HelperDashBoard';
 import SettingsScreen from '../features/screens/SettingsScreen';
 import MainDashboard from '../features/screens/MainDashboard';
 import HelperGuidelinesScreen from '../features/screens/HelperGuidelines';
+import DynamicProximitySearch from '../features/sos-tracking/components/DynamicProximitySearch';
 
 const Stack = createNativeStackNavigator();
 
@@ -23,6 +24,16 @@ const SettingsStack = () => {
     >
       <Stack.Screen name="AuthScreen" component={AuthScreen} options={{ headerShown: false }} />
       <Stack.Screen name="MainDashboard" component={MainDashboard} options={{ headerShown: false }} />
+
+      <Stack.Screen 
+        name="EmergencySearch" 
+        component={DynamicProximitySearch as any} 
+        options={{ 
+            headerShown: false, 
+            gestureEnabled: false // This prevents the user from accidentally swiping back during an emergency
+        }} 
+      />
+
       <Stack.Screen name="SettingsHome" component={SettingsScreen} options={{ title: 'Settings' }} />
       <Stack.Screen name="EditProfile" component={EditProfileScreen} options={{ title: 'Edit Profile' }} />
       <Stack.Screen name="HelperDashboard" component={HelperDashboardScreen} options={{ title: 'Helper Dashboard', headerShadowVisible: false }} />

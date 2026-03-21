@@ -3,6 +3,8 @@
   "compilerOptions": {
     "strict": true,
     "esModuleInterop": true,
+    "allowJs": true,
+    "checkJs": false,
     "jsx": "react-native",
     "paths": {
       "@/*": [
@@ -15,5 +17,5 @@
     "**/*.tsx",
     ".expo/types/**/*.ts",
     "expo-env.d.ts"
-  ]
+, "src/navigation/SettingsStack.tsx", "src/features/sos-tracking/components/DynamicProximitySearch.js"  ]
 }
