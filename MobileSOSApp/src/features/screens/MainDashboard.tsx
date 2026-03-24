@@ -1,11 +1,10 @@
 import type { ParamListBase } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { MapPin, User, Users } from "lucide-react-native";
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   Animated,
   Dimensions,
-  ImageBackground,
   Platform,
   SafeAreaView,
   StyleSheet,
@@ -13,11 +12,9 @@ import {
   TouchableOpacity,
   View
 } from "react-native";
+import MapView, { Marker } from 'react-native-maps';
 
 const { width } = Dimensions.get('window');
-
-// Local image asset for map background
-const MAP_BACKGROUND_SOURCE = require('../../../Images/demo-map.jpg');
 
 type MainDashboardProps = {
   navigation: NativeStackNavigationProp<ParamListBase>;
@@ -28,6 +25,16 @@ export default function MainDashboard({ navigation }: MainDashboardProps) {
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const ring1Anim = useRef(new Animated.Value(1)).current;
   const ring2Anim = useRef(new Animated.Value(1)).current;
+
+  // ASU Tempe Coordinates for testing
+  const USER_LOCATION = { latitude: 33.4150, longitude: -111.9085 };
+
+  // Task 49: State to hold incoming helpers
+  const [helpers, setHelpers] = useState([
+    { id: '1', latitude: 33.4170, longitude: -111.9120 }, 
+    { id: '2', latitude: 33.4120, longitude: -111.9050 },
+    { id: '3', latitude: 33.4185, longitude: -111.9060 }
+  ]);
 
   // Continuous Pulse Animation for the idle SOS button
   useEffect(() => {
@@ -53,19 +60,43 @@ export default function MainDashboard({ navigation }: MainDashboardProps) {
     ]).start();
   }, []);
 
-  // REDIRECT LOGIC: This is the primary change. 
-  // It handles the transition to the DynamicProximitySearch screen.
   const handleTriggerSOS = () => {
     navigation.navigate('EmergencySearch');
   };
 
   return (
-    <ImageBackground
-      source={MAP_BACKGROUND_SOURCE}
-      style={styles.fullScreenBg}
-      resizeMode="cover"
-    >
-      <SafeAreaView style={styles.transparentSafe}>
+    <View style={styles.fullScreenBg}>
+      
+      {/* TASK 49: Live Map Background */}
+      <MapView
+        style={StyleSheet.absoluteFillObject}
+        initialRegion={{
+          latitude: USER_LOCATION.latitude,
+          longitude: USER_LOCATION.longitude,
+          latitudeDelta: 0.03, // Controls zoom level
+          longitudeDelta: 0.03,
+        }}
+      >
+        {/* The Victim's Location */}
+        <Marker 
+          coordinate={USER_LOCATION} 
+          title="You are here" 
+          pinColor="#DC2626" // Red pin
+        />
+
+        {/* The Incoming Helpers */}
+        {helpers.map(helper => (
+          <Marker 
+            key={helper.id} 
+            coordinate={{ latitude: helper.latitude, longitude: helper.longitude }}
+            title="SafeGuard Helper"
+            pinColor="#10B981" // Green pin
+          />
+        ))}
+      </MapView>
+
+      {/* pointerEvents="box-none" lets you touch the map through the invisible parts of the safe area! */}
+      <SafeAreaView style={styles.transparentSafe} pointerEvents="box-none">
 
         {/* Header */}
         <View style={styles.headerLite}>
@@ -84,7 +115,7 @@ export default function MainDashboard({ navigation }: MainDashboardProps) {
         </View>
 
         {/* Main SOS Button & Pulse Rings */}
-        <View style={styles.idleButtonWrapper}>
+        <View style={styles.idleButtonWrapper} pointerEvents="box-none">
           {/* Outer Pulsing Rings */}
           <Animated.View style={[
             styles.ring,
@@ -115,7 +146,7 @@ export default function MainDashboard({ navigation }: MainDashboardProps) {
         </View>
 
         {/* Bottom Navigation Row */}
-        <View style={styles.bottomButtonsContainer}>
+        <View style={styles.bottomButtonsContainer} pointerEvents="box-none">
           <TouchableOpacity
             style={styles.bottomBtn}
             onPress={() => navigation.navigate('EmergencyContacts')}
@@ -138,7 +169,7 @@ export default function MainDashboard({ navigation }: MainDashboardProps) {
         </View>
 
       </SafeAreaView>
-    </ImageBackground>
+    </View>
   );
 }
 
