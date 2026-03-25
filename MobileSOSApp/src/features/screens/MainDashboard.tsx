@@ -10,9 +10,14 @@ import {
   StyleSheet,
   Text,
   TouchableOpacity,
-  View
+  View,
+  ActivityIndicator,
+  Alert
 } from "react-native";
-import MapView, { Marker } from 'react-native-maps';
+import MapView, { Marker, Circle, PROVIDER_GOOGLE } from 'react-native-maps';
+
+// Import the service logic and the Helper type we defined earlier
+import { findNearestHelpers, Helper } from '../../services/helperService';
 
 const { width } = Dimensions.get('window');
 
@@ -26,17 +31,33 @@ export default function MainDashboard({ navigation }: MainDashboardProps) {
   const ring1Anim = useRef(new Animated.Value(1)).current;
   const ring2Anim = useRef(new Animated.Value(1)).current;
 
+  // --- STATE ---
   // ASU Tempe Coordinates for testing
   const USER_LOCATION = { latitude: 33.4150, longitude: -111.9085 };
+  
+  // Use the Helper interface from our service for strict typing
+  const [helpers, setHelpers] = useState<Helper[]>([]); 
+  const [searchRadius, setSearchRadius] = useState<number>(0); 
+  const [isSearching, setIsSearching] = useState<boolean>(false);
 
-  // Task 49: State to hold incoming helpers
-  const [helpers, setHelpers] = useState([
-    { id: '1', latitude: 33.4170, longitude: -111.9120 }, 
-    { id: '2', latitude: 33.4120, longitude: -111.9050 },
-    { id: '3', latitude: 33.4185, longitude: -111.9060 }
-  ]);
+  // --- TASK 48.5: MOVEMENT ENGINE ---
+  useEffect(() => {
+    if (helpers.length === 0) return;
 
-  // Continuous Pulse Animation for the idle SOS button
+    const interval = setInterval(() => {
+      setHelpers((prevHelpers) =>
+        prevHelpers.map((h) => ({
+          ...h,
+          latitude: h.latitude + (Math.random() - 0.5) * 0.0001,
+          longitude: h.longitude + (Math.random() - 0.5) * 0.0001,
+        }))
+      );
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [helpers]);
+
+  // SOS Button Pulse Animation Loop
   useEffect(() => {
     const createLoop = (anim: Animated.Value, toValue: number, duration: number) => {
       return Animated.loop(
@@ -58,46 +79,83 @@ export default function MainDashboard({ navigation }: MainDashboardProps) {
       ringLoop(ring1Anim, 1.5, 2000),
       ringLoop(ring2Anim, 2, 2000),
     ]).start();
-  }, []);
+  }, [pulseAnim, ring1Anim, ring2Anim]);
 
-  const handleTriggerSOS = () => {
-    navigation.navigate('EmergencySearch');
+  // --- TRIGGER SOS LOGIC ---
+  const handleTriggerSOS = async () => {
+    setIsSearching(true);
+    setHelpers([]); // Reset UI
+    setSearchRadius(0);
+
+    try {
+      // Logic for Task 47 & 48 inside our service
+      const result = await findNearestHelpers(USER_LOCATION.latitude, USER_LOCATION.longitude);
+
+      if (result.helpers.length > 0) {
+        setHelpers(result.helpers);
+        setSearchRadius(result.finalRadius);
+        
+        // Let the user see the visual on the dashboard for 2 seconds before moving to detailed search
+        setTimeout(() => {
+          navigation.navigate('EmergencySearch', { 
+            foundHelpers: result.helpers, 
+            radius: result.finalRadius 
+          });
+        }, 2000);
+      } else {
+        Alert.alert("No Helpers Found", "Searched up to 5km. Please stay calm, alerting authorities.");
+      }
+    } catch (error) {
+      console.error("SOS Error:", error);
+      Alert.alert("Error", "Unable to complete emergency search.");
+    } finally {
+      setIsSearching(false);
+    }
   };
 
   return (
     <View style={styles.fullScreenBg}>
       
-      {/* TASK 49: Live Map Background */}
+      {/* Background Map */}
       <MapView
+        provider={PROVIDER_GOOGLE}
         style={StyleSheet.absoluteFillObject}
         initialRegion={{
           latitude: USER_LOCATION.latitude,
           longitude: USER_LOCATION.longitude,
-          latitudeDelta: 0.03, // Controls zoom level
+          latitudeDelta: 0.03,
           longitudeDelta: 0.03,
         }}
       >
-        {/* The Victim's Location */}
         <Marker 
           coordinate={USER_LOCATION} 
           title="You are here" 
-          pinColor="#DC2626" // Red pin
+          pinColor="#DC2626" 
         />
 
-        {/* The Incoming Helpers */}
+        {/* Task 48: The Visual Search Circle */}
+        {searchRadius > 0 && (
+          <Circle
+            center={USER_LOCATION}
+            radius={searchRadius}
+            strokeWidth={2}
+            strokeColor="rgba(220, 38, 38, 0.5)"
+            fillColor="rgba(220, 38, 38, 0.1)"
+          />
+        )}
+
+        {/* Task 47: The Dynamic Helpers */}
         {helpers.map(helper => (
           <Marker 
             key={helper.id} 
             coordinate={{ latitude: helper.latitude, longitude: helper.longitude }}
-            title="SafeGuard Helper"
-            pinColor="#10B981" // Green pin
+            title={helper.name}
+            pinColor="#10B981"
           />
         ))}
       </MapView>
 
-      {/* pointerEvents="box-none" lets you touch the map through the invisible parts of the safe area! */}
       <SafeAreaView style={styles.transparentSafe} pointerEvents="box-none">
-
         {/* Header */}
         <View style={styles.headerLite}>
           <Text style={styles.screenTitleCentered}>SafeGuard</Text>
@@ -114,9 +172,8 @@ export default function MainDashboard({ navigation }: MainDashboardProps) {
           </View>
         </View>
 
-        {/* Main SOS Button & Pulse Rings */}
+        {/* Main SOS Button */}
         <View style={styles.idleButtonWrapper} pointerEvents="box-none">
-          {/* Outer Pulsing Rings */}
           <Animated.View style={[
             styles.ring,
             {
@@ -132,20 +189,26 @@ export default function MainDashboard({ navigation }: MainDashboardProps) {
             }
           ]} />
 
-          {/* The SOS Button itself */}
           <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
             <TouchableOpacity
               activeOpacity={0.8}
               onPress={handleTriggerSOS}
-              style={styles.sosButton}
+              disabled={isSearching}
+              style={[styles.sosButton, isSearching && { backgroundColor: '#991B1B' }]}
             >
-              <Text style={styles.sosButtonTextMain}>SOS</Text>
-              <Text style={styles.sosButtonTextSub}>PRESS IN EMERGENCY</Text>
+              {isSearching ? (
+                <ActivityIndicator color="#FFF" size="large" />
+              ) : (
+                <View style={{ alignItems: 'center' }}>
+                  <Text style={styles.sosButtonTextMain}>SOS</Text>
+                  <Text style={styles.sosButtonTextSub}>PRESS IN EMERGENCY</Text>
+                </View>
+              )}
             </TouchableOpacity>
           </Animated.View>
         </View>
 
-        {/* Bottom Navigation Row */}
+        {/* Navigation Row */}
         <View style={styles.bottomButtonsContainer} pointerEvents="box-none">
           <TouchableOpacity
             style={styles.bottomBtn}
@@ -167,17 +230,15 @@ export default function MainDashboard({ navigation }: MainDashboardProps) {
             <Text style={styles.bottomBtnText}>User{'\n'}Profile</Text>
           </TouchableOpacity>
         </View>
-
       </SafeAreaView>
     </View>
   );
 }
 
+// Ensure styles match exactly what you had before
 const styles = StyleSheet.create({
   fullScreenBg: { flex: 1, width: '100%', height: '100%' },
   transparentSafe: { flex: 1, alignItems: 'center', backgroundColor: 'transparent' },
-
-  // Header
   headerLite: {
     width: '100%',
     alignItems: 'center',
@@ -190,8 +251,6 @@ const styles = StyleSheet.create({
     color: '#111827',
     letterSpacing: -0.5
   },
-
-  // Location Card
   locationCard: {
     flexDirection: 'row',
     backgroundColor: 'rgba(255, 255, 255, 0.95)',
@@ -227,8 +286,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#111827'
   },
-
-  // SOS Button UI
   idleButtonWrapper: {
     position: 'absolute',
     top: '38%',
@@ -270,8 +327,6 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
     opacity: 0.9
   },
-
-  // Bottom Buttons
   bottomButtonsContainer: {
     position: 'absolute',
     bottom: Platform.OS === 'ios' ? 40 : 30,
