@@ -39,6 +39,7 @@ export default function MainDashboard({ navigation }: MainDashboardProps) {
   const [helpers, setHelpers] = useState<Helper[]>([]); 
   const [searchRadius, setSearchRadius] = useState<number>(0); 
   const [isSearching, setIsSearching] = useState<boolean>(false);
+  const [timerCount, setTimerCount] = useState<number>(0); // NEW: Timer State
 
   // --- TASK 48.5: MOVEMENT ENGINE ---
   useEffect(() => {
@@ -48,14 +49,37 @@ export default function MainDashboard({ navigation }: MainDashboardProps) {
       setHelpers((prevHelpers) =>
         prevHelpers.map((h) => ({
           ...h,
-          latitude: h.latitude + (Math.random() - 0.5) * 0.0001,
-          longitude: h.longitude + (Math.random() - 0.5) * 0.0001,
+          // Moves helpers 3% closer to user every 3 seconds for realistic tracking
+          latitude: h.latitude + (USER_LOCATION.latitude - h.latitude) * 0.03,
+          longitude: h.longitude + (USER_LOCATION.longitude - h.longitude) * 0.03,
         }))
       );
     }, 3000);
 
     return () => clearInterval(interval);
   }, [helpers]);
+
+  // --- TASK 48: 30-SECOND EXPANSION TIMER ---
+  const timerRef = useRef<any>(null);
+
+  useEffect(() => {
+    if (isSearching && helpers.length === 0) {
+      timerRef.current = setInterval(() => {
+        setTimerCount((prev) => {
+          if (prev >= 29) {
+            if (timerRef.current) clearInterval(timerRef.current);
+            handleExpandSearch();
+            return 0;
+          }
+          return prev + 1;
+        });
+      }, 1000);
+    }
+
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, [isSearching, helpers.length]);
 
   // SOS Button Pulse Animation Loop
   useEffect(() => {
@@ -85,30 +109,42 @@ export default function MainDashboard({ navigation }: MainDashboardProps) {
   const handleTriggerSOS = async () => {
     setIsSearching(true);
     setHelpers([]); // Reset UI
-    setSearchRadius(0);
+    setSearchRadius(250); // Start at 250m
+    setTimerCount(0); // Reset timer
+    
+    // Note: We don't call findNearestHelpers here to simulate the "no one found yet" 30s wait
+  };
 
+  const handleExpandSearch = async () => {
+    const doubledRadius = 500;
+    setSearchRadius(doubledRadius);
+    
     try {
       // Logic for Task 47 & 48 inside our service
-      const result = await findNearestHelpers(USER_LOCATION.latitude, USER_LOCATION.longitude);
+      const result = await findNearestHelpers(USER_LOCATION.latitude, USER_LOCATION.longitude, doubledRadius);
 
       if (result.helpers.length > 0) {
         setHelpers(result.helpers);
         setSearchRadius(result.finalRadius);
+        setIsSearching(false);
         
-        // Let the user see the visual on the dashboard for 2 seconds before moving to detailed search
+        // Brief alert to inform the user expansion worked
+        Alert.alert("Radius Expanded", "Searching within 500m. 5 Helpers found!");
+
+        // Move to detailed search after showing results on map
         setTimeout(() => {
           navigation.navigate('EmergencySearch', { 
             foundHelpers: result.helpers, 
             radius: result.finalRadius 
           });
-        }, 2000);
+        }, 3000);
       } else {
-        Alert.alert("No Helpers Found", "Searched up to 5km. Please stay calm, alerting authorities.");
+        Alert.alert("No Helpers Found", "Expanding further. Alerting authorities.");
+        setIsSearching(false);
       }
     } catch (error) {
       console.error("SOS Error:", error);
       Alert.alert("Error", "Unable to complete emergency search.");
-    } finally {
       setIsSearching(false);
     }
   };
@@ -167,7 +203,12 @@ export default function MainDashboard({ navigation }: MainDashboardProps) {
             <MapPin color="#DC2626" size={18} />
           </View>
           <View>
-            <Text style={styles.locationLabel}>CURRENT LOCATION</Text>
+            {/* TASK 48 Visual Countdown */}
+            <Text style={styles.locationLabel}>
+              {isSearching && helpers.length === 0 
+                ? `EXPANDING IN ${30 - timerCount}s` 
+                : "CURRENT LOCATION"}
+            </Text>
             <Text style={styles.locationText}>1831 E, Apache Blvd</Text>
           </View>
         </View>
@@ -235,7 +276,6 @@ export default function MainDashboard({ navigation }: MainDashboardProps) {
   );
 }
 
-// Ensure styles match exactly what you had before
 const styles = StyleSheet.create({
   fullScreenBg: { flex: 1, width: '100%', height: '100%' },
   transparentSafe: { flex: 1, alignItems: 'center', backgroundColor: 'transparent' },
