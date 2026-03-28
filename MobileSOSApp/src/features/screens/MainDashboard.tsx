@@ -41,34 +41,40 @@ export default function MainDashboard({ navigation }: MainDashboardProps) {
   const [isSearching, setIsSearching] = useState<boolean>(false);
   const [timerCount, setTimerCount] = useState<number>(0); // NEW: Timer State
 
-  // --- TASK 48.5: MOVEMENT ENGINE ---
+  // --- TASK 48.5: THE MOVEMENT ENGINE (Live Tracker) ---
   useEffect(() => {
     if (helpers.length === 0) return;
 
-    const interval = setInterval(() => {
+    const moveInterval = setInterval(() => {
       setHelpers((prevHelpers) =>
         prevHelpers.map((h) => ({
           ...h,
-          // Moves helpers 3% closer to user every 3 seconds for realistic tracking
-          latitude: h.latitude + (USER_LOCATION.latitude - h.latitude) * 0.03,
-          longitude: h.longitude + (USER_LOCATION.longitude - h.longitude) * 0.03,
+          // Move helpers 2% closer to the user every 3 seconds
+          latitude: h.latitude + (USER_LOCATION.latitude - h.latitude) * 0.02,
+          longitude: h.longitude + (USER_LOCATION.longitude - h.longitude) * 0.02,
         }))
       );
     }, 3000);
 
-    return () => clearInterval(interval);
-  }, [helpers]);
+    return () => clearInterval(moveInterval);
+  }, [helpers.length]); // Re-runs if number of helpers changes
 
-  // --- TASK 48: 30-SECOND EXPANSION TIMER ---
+  // --- TASK 48: DYNAMIC 30-SECOND EXPANSION TIMER ---
   const timerRef = useRef<any>(null);
 
   useEffect(() => {
+    // Only start the timer if we are searching and haven't found helpers yet
     if (isSearching && helpers.length === 0) {
+      // Clear any existing timer to prevent "doubling up"
+      if (timerRef.current) clearInterval(timerRef.current);
+
       timerRef.current = setInterval(() => {
+        // Use functional update (prev => ...) to keep the count dynamic
         setTimerCount((prev) => {
-          if (prev >= 29) {
+          if (prev >= 29) { 
+            // 30 seconds reached!
             if (timerRef.current) clearInterval(timerRef.current);
-            handleExpandSearch();
+            handleExpandSearch(); // This function handles the radius doubling
             return 0;
           }
           return prev + 1;
@@ -76,6 +82,7 @@ export default function MainDashboard({ navigation }: MainDashboardProps) {
       }, 1000);
     }
 
+    // Cleanup when the search ends or component closes
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
@@ -108,11 +115,12 @@ export default function MainDashboard({ navigation }: MainDashboardProps) {
   // --- TRIGGER SOS LOGIC ---
   const handleTriggerSOS = async () => {
     setIsSearching(true);
-    setHelpers([]); // Reset UI
-    setSearchRadius(250); // Start at 250m
-    setTimerCount(0); // Reset timer
+    setHelpers([]); // Clear any previous helpers
+    setSearchRadius(250); // Start with the initial 250m circle
+    setTimerCount(0); // Ensure the countdown starts from 0
     
-    // Note: We don't call findNearestHelpers here to simulate the "no one found yet" 30s wait
+    // Note: The findNearestHelpers call now happens inside the timer logic 
+    // after 30 seconds, so we don't call it here.
   };
 
   const handleExpandSearch = async () => {
