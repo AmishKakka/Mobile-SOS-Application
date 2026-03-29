@@ -16,15 +16,15 @@ export interface Helper {
 const toRad = (value: number): number => (value * Math.PI) / 180;
 
 /**
- * Generates exactly 5 mock helpers within the provided radius.
- * No 30% failure chance here—the Dashboard controls the "waiting" period.
+ * TASK 47: Generates exactly 5 mock helpers within the provided radius.
+ * Guaranteed to return 5 helpers for the demo.
  */
 export const fetchHelpersFromAPI = async (
   userLat: number,
   userLng: number,
   radius: number
 ): Promise<Helper[]> => {
-  // Simulate network latency (800ms)
+  // Simulate network latency (800ms) for realism
   await new Promise((resolve) => setTimeout(resolve, 800));
 
   const mockHelpers: Helper[] = [];
@@ -54,13 +54,14 @@ export const fetchHelpersFromAPI = async (
 };
 
 /**
- * Task 48: Search entry point called after the 35-second timer.
+ * TASK 48: Search entry point called after the 30-second timer.
  */
 export const findNearestHelpers = async (
   userLat: number,
   userLng: number,
   radius: number
 ) => {
+  // We call fetchHelpers directly with the specific radius requested
   const helpers = await fetchHelpersFromAPI(userLat, userLng, radius);
   return {
     helpers,

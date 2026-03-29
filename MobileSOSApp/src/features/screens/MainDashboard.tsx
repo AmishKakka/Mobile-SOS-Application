@@ -32,16 +32,16 @@ export default function MainDashboard({ navigation }: MainDashboardProps) {
   const ring2Anim = useRef(new Animated.Value(1)).current;
 
   // --- STATE ---
-  // ASU Tempe Coordinates for testing
   const USER_LOCATION = { latitude: 33.4150, longitude: -111.9085 };
   
-  // Use the Helper interface from our service for strict typing
   const [helpers, setHelpers] = useState<Helper[]>([]); 
   const [searchRadius, setSearchRadius] = useState<number>(0); 
   const [isSearching, setIsSearching] = useState<boolean>(false);
-  const [timerCount, setTimerCount] = useState<number>(0); // NEW: Timer State
+  const [timerCount, setTimerCount] = useState<number>(0);
+  const timerRef = useRef<any>(null);
 
   // --- TASK 48.5: THE MOVEMENT ENGINE (Live Tracker) ---
+  // Only runs when markers are actually present on the map
   useEffect(() => {
     if (helpers.length === 0) return;
 
@@ -49,7 +49,6 @@ export default function MainDashboard({ navigation }: MainDashboardProps) {
       setHelpers((prevHelpers) =>
         prevHelpers.map((h) => ({
           ...h,
-          // Move helpers 2% closer to the user every 3 seconds
           latitude: h.latitude + (USER_LOCATION.latitude - h.latitude) * 0.02,
           longitude: h.longitude + (USER_LOCATION.longitude - h.longitude) * 0.02,
         }))
@@ -57,24 +56,19 @@ export default function MainDashboard({ navigation }: MainDashboardProps) {
     }, 3000);
 
     return () => clearInterval(moveInterval);
-  }, [helpers.length]); // Re-runs if number of helpers changes
+  }, [helpers.length]); 
 
   // --- TASK 48: DYNAMIC 30-SECOND EXPANSION TIMER ---
-  const timerRef = useRef<any>(null);
-
   useEffect(() => {
-    // Only start the timer if we are searching and haven't found helpers yet
+    // Start timer only if searching and no helpers found yet (Gating)
     if (isSearching && helpers.length === 0) {
-      // Clear any existing timer to prevent "doubling up"
       if (timerRef.current) clearInterval(timerRef.current);
 
       timerRef.current = setInterval(() => {
-        // Use functional update (prev => ...) to keep the count dynamic
         setTimerCount((prev) => {
           if (prev >= 29) { 
-            // 30 seconds reached!
             if (timerRef.current) clearInterval(timerRef.current);
-            handleExpandSearch(); // This function handles the radius doubling
+            handleExpandSearch(); 
             return 0;
           }
           return prev + 1;
@@ -82,7 +76,6 @@ export default function MainDashboard({ navigation }: MainDashboardProps) {
       }, 1000);
     }
 
-    // Cleanup when the search ends or component closes
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
@@ -113,14 +106,11 @@ export default function MainDashboard({ navigation }: MainDashboardProps) {
   }, [pulseAnim, ring1Anim, ring2Anim]);
 
   // --- TRIGGER SOS LOGIC ---
-  const handleTriggerSOS = async () => {
-    setIsSearching(true);
-    setHelpers([]); // Clear any previous helpers
-    setSearchRadius(250); // Start with the initial 250m circle
-    setTimerCount(0); // Ensure the countdown starts from 0
-    
-    // Note: The findNearestHelpers call now happens inside the timer logic 
-    // after 30 seconds, so we don't call it here.
+  const handleTriggerSOS = () => {
+    setHelpers([]); // Clear markers immediately
+    setTimerCount(0); 
+    setSearchRadius(250); 
+    setIsSearching(true); 
   };
 
   const handleExpandSearch = async () => {
@@ -128,31 +118,27 @@ export default function MainDashboard({ navigation }: MainDashboardProps) {
     setSearchRadius(doubledRadius);
     
     try {
-      // Logic for Task 47 & 48 inside our service
       const result = await findNearestHelpers(USER_LOCATION.latitude, USER_LOCATION.longitude, doubledRadius);
 
-      if (result.helpers.length > 0) {
-        setHelpers(result.helpers);
+      if (result.helpers && result.helpers.length > 0) {
+        setHelpers(result.helpers); // Now markers pop on map
         setSearchRadius(result.finalRadius);
         setIsSearching(false);
         
-        // Brief alert to inform the user expansion worked
-        Alert.alert("Radius Expanded", "Searching within 500m. 5 Helpers found!");
+        Alert.alert("Search Expanded", "No one found at 250m. Found 5 volunteers within 500m!");
 
-        // Move to detailed search after showing results on map
         setTimeout(() => {
           navigation.navigate('EmergencySearch', { 
             foundHelpers: result.helpers, 
             radius: result.finalRadius 
           });
-        }, 3000);
+        }, 4000); // 4 seconds of movement before navigating
       } else {
-        Alert.alert("No Helpers Found", "Expanding further. Alerting authorities.");
+        Alert.alert("Notice", "Expanding search to 1km. Authorities notified.");
         setIsSearching(false);
       }
     } catch (error) {
-      console.error("SOS Error:", error);
-      Alert.alert("Error", "Unable to complete emergency search.");
+      console.error("Expansion Error:", error);
       setIsSearching(false);
     }
   };
@@ -160,7 +146,6 @@ export default function MainDashboard({ navigation }: MainDashboardProps) {
   return (
     <View style={styles.fullScreenBg}>
       
-      {/* Background Map */}
       <MapView
         provider={PROVIDER_GOOGLE}
         style={StyleSheet.absoluteFillObject}
@@ -177,7 +162,6 @@ export default function MainDashboard({ navigation }: MainDashboardProps) {
           pinColor="#DC2626" 
         />
 
-        {/* Task 48: The Visual Search Circle */}
         {searchRadius > 0 && (
           <Circle
             center={USER_LOCATION}
@@ -188,7 +172,6 @@ export default function MainDashboard({ navigation }: MainDashboardProps) {
           />
         )}
 
-        {/* Task 47: The Dynamic Helpers */}
         {helpers.map(helper => (
           <Marker 
             key={helper.id} 
@@ -200,18 +183,15 @@ export default function MainDashboard({ navigation }: MainDashboardProps) {
       </MapView>
 
       <SafeAreaView style={styles.transparentSafe} pointerEvents="box-none">
-        {/* Header */}
         <View style={styles.headerLite}>
           <Text style={styles.screenTitleCentered}>SafeGuard</Text>
         </View>
 
-        {/* Location Card */}
         <View style={styles.locationCard}>
           <View style={styles.locationIconBox}>
             <MapPin color="#DC2626" size={18} />
           </View>
           <View>
-            {/* TASK 48 Visual Countdown */}
             <Text style={styles.locationLabel}>
               {isSearching && helpers.length === 0 
                 ? `EXPANDING IN ${30 - timerCount}s` 
@@ -221,7 +201,6 @@ export default function MainDashboard({ navigation }: MainDashboardProps) {
           </View>
         </View>
 
-        {/* Main SOS Button */}
         <View style={styles.idleButtonWrapper} pointerEvents="box-none">
           <Animated.View style={[
             styles.ring,
@@ -245,8 +224,11 @@ export default function MainDashboard({ navigation }: MainDashboardProps) {
               disabled={isSearching}
               style={[styles.sosButton, isSearching && { backgroundColor: '#991B1B' }]}
             >
-              {isSearching ? (
-                <ActivityIndicator color="#FFF" size="large" />
+              {isSearching && helpers.length === 0 ? (
+                <View style={{alignItems: 'center'}}>
+                  <ActivityIndicator color="#FFF" size="large" />
+                  <Text style={{color: '#FFF', fontWeight: '700', marginTop: 10}}>SEARCHING...</Text>
+                </View>
               ) : (
                 <View style={{ alignItems: 'center' }}>
                   <Text style={styles.sosButtonTextMain}>SOS</Text>
@@ -257,7 +239,6 @@ export default function MainDashboard({ navigation }: MainDashboardProps) {
           </Animated.View>
         </View>
 
-        {/* Navigation Row */}
         <View style={styles.bottomButtonsContainer} pointerEvents="box-none">
           <TouchableOpacity
             style={styles.bottomBtn}
