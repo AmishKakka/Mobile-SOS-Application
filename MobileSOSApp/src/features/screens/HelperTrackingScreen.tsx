@@ -11,7 +11,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import MapView, { Marker, Polyline } from 'react-native-maps';
-import { Navigation, AlertTriangle, MapPin, Clock, X, CheckCircle, XCircle } from 'lucide-react-native';
+import { Navigation, MapPin, Clock, X, CheckCircle, XCircle } from 'lucide-react-native';
 
 import type { ParamListBase } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -234,15 +234,6 @@ export default function HelperTrackingScreen({ navigation, route: navRoute }: Pr
         />
       </MapView>
 
-      {/* Top status bar */}
-      <View style={styles.topBar}>
-        <View style={styles.topBarPill}>
-          <View style={styles.liveDot} />
-          <Text style={styles.topBarText}>RESPONDING</Text>
-          <Text style={styles.topBarTimer}>{formatElapsed()}</Text>
-        </View>
-      </View>
-
       {/* Route loading indicator */}
       {isLoadingRoute && (
         <View style={styles.loadingOverlay}>
@@ -261,10 +252,6 @@ export default function HelperTrackingScreen({ navigation, route: navRoute }: Pr
           </View>
           <View style={styles.victimInfo}>
             <Text style={styles.victimName}>{victimName}</Text>
-            <View style={styles.badge}>
-              <AlertTriangle color="#DC2626" size={12} />
-              <Text style={styles.badgeText}>{incidentType}</Text>
-            </View>
           </View>
         </View>
 
@@ -311,7 +298,7 @@ export default function HelperTrackingScreen({ navigation, route: navRoute }: Pr
 
         <TouchableOpacity style={styles.abortButton} activeOpacity={0.8} onPress={handleAbort}>
           <X color="#6B7280" size={18} />
-          <Text style={styles.abortButtonText}>Abort Response</Text>
+          <Text style={styles.abortButtonText}>Cancel</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -321,43 +308,6 @@ export default function HelperTrackingScreen({ navigation, route: navRoute }: Pr
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#FFF' },
   map: { width, height: Dimensions.get('window').height },
-
-  topBar: {
-    position: 'absolute',
-    top: Platform.OS === 'ios' ? 60 : 40,
-    alignSelf: 'center',
-  },
-  topBarPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.95)',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 24,
-    gap: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.12,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  liveDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: '#16A34A',
-  },
-  topBarText: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: '#16A34A',
-    letterSpacing: 0.5,
-  },
-  topBarTimer: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#6B7280',
-  },
 
   loadingOverlay: {
     position: 'absolute',
@@ -428,22 +378,6 @@ const styles = StyleSheet.create({
     color: '#111827',
     marginBottom: 4,
   },
-  badge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    alignSelf: 'flex-start',
-    backgroundColor: '#FEF2F2',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-    gap: 4,
-  },
-  badgeText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#DC2626',
-  },
-
   statsRow: {
     flexDirection: 'row',
     backgroundColor: '#F9FAFB',
