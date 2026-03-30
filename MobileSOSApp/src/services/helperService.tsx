@@ -1,10 +1,3 @@
-// src/services/helperService.tsx
-
-/** * TASK 47 & 48: Dynamic Helper Logic 
- * This file handles the mathematical generation of 5 helpers 
- * within a specific radius passed from the Dashboard.
- */
-
 export interface Helper {
   id: string;
   name: string;
@@ -13,58 +6,25 @@ export interface Helper {
   distanceAway: number;
 }
 
-const toRad = (value: number): number => (value * Math.PI) / 180;
+const toRad = (v: number) => (v * Math.PI) / 180;
 
-/**
- * TASK 47: Generates exactly 5 mock helpers within the provided radius.
- * Guaranteed to return 5 helpers for the demo.
- */
-export const fetchHelpersFromAPI = async (
-  userLat: number,
-  userLng: number,
-  radius: number
-): Promise<Helper[]> => {
-  // Simulate network latency (800ms) for realism
-  await new Promise((resolve) => setTimeout(resolve, 800));
+export const findNearestHelpers = async (userLat: number, userLng: number, radius: number) => {
+  await new Promise(r => setTimeout(r, 400));
+  
+  // Return ONE random helper within the current search radius
+  const r = radius * Math.sqrt(Math.random());
+  const theta = Math.random() * 2 * Math.PI;
+  const deltaLat = (r * Math.sin(theta)) / 111320;
+  const deltaLng = (r * Math.cos(theta)) / (111320 * Math.cos(toRad(userLat)));
 
-  const mockHelpers: Helper[] = [];
-  const count = 5;
-
-  for (let i = 0; i < count; i++) {
-    // Square root distribution for even spreading inside the circle
-    const r = radius * Math.sqrt(Math.random());
-    const theta = Math.random() * 2 * Math.PI;
-
-    const dy = r * Math.sin(theta);
-    const dx = r * Math.cos(theta);
-
-    const deltaLat = dy / 111320;
-    const deltaLng = dx / (111320 * Math.cos(toRad(userLat)));
-
-    mockHelpers.push({
-      id: `helper_${Math.random().toString(36).substring(2, 11)}`,
-      name: `SafeGuard Volunteer ${i + 1}`,
+  return {
+    helpers: [{
+      id: `h_${Math.random().toString(36).substring(2, 7)}`,
+      name: `SafeGuard Volunteer`,
       latitude: userLat + deltaLat,
       longitude: userLng + deltaLng,
-      distanceAway: Math.round(r),
-    });
-  }
-
-  return mockHelpers;
-};
-
-/**
- * TASK 48: Search entry point called after the 30-second timer.
- */
-export const findNearestHelpers = async (
-  userLat: number,
-  userLng: number,
-  radius: number
-) => {
-  // We call fetchHelpers directly with the specific radius requested
-  const helpers = await fetchHelpersFromAPI(userLat, userLng, radius);
-  return {
-    helpers,
-    finalRadius: radius,
+      distanceAway: Math.round(r)
+    }],
+    finalRadius: radius
   };
 };
