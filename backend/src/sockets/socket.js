@@ -1,6 +1,6 @@
 const { Server } = require("socket.io");
-const mongoose = require("mongoose");
-const User = mongoose.model('User'); 
+// const mongoose = require("mongoose");
+// const User = mongoose.model('User'); 
 // const Incident = mongoose.model('Incident');
 const { triggerSOS } = require("./dynamicProximitySearch"); 
 
