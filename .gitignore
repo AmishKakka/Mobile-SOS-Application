@@ -1,7 +1,7 @@
 */node_modules
 
-.terraform/
-*.tfstate
-*.tfstate.backup
-*.tfvars
-*.tfvars.json
+./backend/*.tfstate
+./backend/*.tfstate.backup
+./backend/.terraform/
+./backend/*.tfvars
+./backend/*.tfvars.json
