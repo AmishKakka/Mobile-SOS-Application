@@ -10,7 +10,7 @@ import {
   Platform,
 } from 'react-native';
 import MapView, { Marker } from 'react-native-maps';
-import { AlertTriangle, MapPin, Clock, User, X, Check } from 'lucide-react-native';
+import { AlertTriangle, MapPin, User, X, Check } from 'lucide-react-native';
 
 import type { ParamListBase } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -101,10 +101,6 @@ export default function HelperSOSNotificationScreen({ navigation, route }: Props
           <View style={styles.detailItem}>
             <MapPin color="#6B7280" size={16} />
             <Text style={styles.detailText}>{distance} away</Text>
-          </View>
-          <View style={styles.detailItem}>
-            <Clock color="#6B7280" size={16} />
-            <Text style={styles.detailText}>Just now</Text>
           </View>
         </View>
       </Animated.View>

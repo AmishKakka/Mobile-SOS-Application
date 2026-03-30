@@ -4,16 +4,21 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
+  TextInput,
   Dimensions,
   Platform,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import MapView, { Marker, Polyline } from 'react-native-maps';
-import { Navigation, AlertTriangle, MapPin, Clock, X, CheckCircle } from 'lucide-react-native';
+import { Navigation, AlertTriangle, MapPin, Clock, X, CheckCircle, XCircle } from 'lucide-react-native';
 
 import type { ParamListBase } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
+
+import { fetchRoute, type RouteResult } from '../../utils/directions';
+import { GOOGLE_MAPS_API_KEY } from '../../config/keys';
 
 const { width } = Dimensions.get('window');
 
@@ -34,17 +39,6 @@ const TOTAL_STEPS = 30;
 const STEP_INTERVAL_MS = 2000;
 const REACHED_THRESHOLD_KM = 0.05;
 
-function interpolatePosition(
-  start: { latitude: number; longitude: number },
-  end: { latitude: number; longitude: number },
-  fraction: number,
-) {
-  return {
-    latitude: start.latitude + (end.latitude - start.latitude) * fraction,
-    longitude: start.longitude + (end.longitude - start.longitude) * fraction,
-  };
-}
-
 function haversineKm(
   a: { latitude: number; longitude: number },
   b: { latitude: number; longitude: number },
@@ -58,43 +52,89 @@ function haversineKm(
   return 6371 * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
 }
 
-function formatEta(distKm: number): string {
-  const walkingSpeedKmMin = 0.08;
-  const mins = Math.max(1, Math.round(distKm / walkingSpeedKmMin));
-  return `${mins} min`;
+function interpolatePosition(
+  start: { latitude: number; longitude: number },
+  end: { latitude: number; longitude: number },
+  fraction: number,
+) {
+  return {
+    latitude: start.latitude + (end.latitude - start.latitude) * fraction,
+    longitude: start.longitude + (end.longitude - start.longitude) * fraction,
+  };
 }
 
-export default function HelperTrackingScreen({ navigation, route }: Props) {
+export default function HelperTrackingScreen({ navigation, route: navRoute }: Props) {
   const {
     victimName = 'Sarah M.',
     victimLocation = { latitude: 33.4152, longitude: -111.9263 },
     incidentType = 'Medical Emergency',
-  } = route.params ?? {};
+  } = navRoute.params ?? {};
 
   const [helperLocation, setHelperLocation] = useState(HELPER_START);
   const [hasReached, setHasReached] = useState(false);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [notes, setNotes] = useState('');
+  const [routeCoords, setRouteCoords] = useState<{ latitude: number; longitude: number }[] | null>(null);
+  const [routeInfo, setRouteInfo] = useState<{ distanceText: string; durationText: string } | null>(null);
+  const [isLoadingRoute, setIsLoadingRoute] = useState(true);
   const mapRef = useRef<MapView>(null);
   const stepRef = useRef(0);
 
   const distKm = haversineKm(helperLocation, victimLocation);
-  const distDisplay = distKm < 0.1 ? `${Math.round(distKm * 1000)} m` : `${distKm.toFixed(2)} km`;
+  const distDisplay = routeInfo
+    ? routeInfo.distanceText
+    : distKm < 0.1
+      ? `${Math.round(distKm * 1000)} m`
+      : `${distKm.toFixed(2)} km`;
+  const etaDisplay = routeInfo ? routeInfo.durationText : `${Math.max(1, Math.round(distKm / 0.08))} min`;
 
-  // Simulated helper movement toward victim
+  // Fetch route from Google Directions API on mount
   useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      const result = await fetchRoute(HELPER_START, victimLocation, GOOGLE_MAPS_API_KEY);
+
+      if (cancelled) return;
+      setIsLoadingRoute(false);
+
+      if (result) {
+        setRouteCoords(result.coordinates);
+        setRouteInfo({
+          distanceText: result.distanceText,
+          durationText: result.durationText,
+        });
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [victimLocation]);
+
+  // Animate helper along route coordinates (or straight line as fallback)
+  useEffect(() => {
+    if (isLoadingRoute) return;
+
+    const totalSteps = routeCoords ? routeCoords.length - 1 : TOTAL_STEPS;
+    if (totalSteps <= 0) return;
+
     const interval = setInterval(() => {
       stepRef.current += 1;
-      const fraction = Math.min(stepRef.current / TOTAL_STEPS, 1);
-      const newPos = interpolatePosition(HELPER_START, victimLocation, fraction);
-      setHelperLocation(newPos);
+      const step = Math.min(stepRef.current, totalSteps);
 
-      if (fraction >= 1) {
+      if (routeCoords) {
+        setHelperLocation(routeCoords[step]);
+      } else {
+        const fraction = step / totalSteps;
+        setHelperLocation(interpolatePosition(HELPER_START, victimLocation, fraction));
+      }
+
+      if (step >= totalSteps) {
         clearInterval(interval);
       }
     }, STEP_INTERVAL_MS);
 
     return () => clearInterval(interval);
-  }, [victimLocation]);
+  }, [isLoadingRoute, routeCoords, victimLocation]);
 
   // Elapsed time counter
   useEffect(() => {
@@ -109,15 +149,16 @@ export default function HelperTrackingScreen({ navigation, route }: Props) {
     }
   }, [distKm, hasReached]);
 
-  // Fit map to both markers whenever helper moves
+  // Fit map to both markers (and route) whenever helper moves
   useEffect(() => {
     if (mapRef.current) {
-      mapRef.current.fitToCoordinates([helperLocation, victimLocation], {
+      const coordsToFit = routeCoords ?? [helperLocation, victimLocation];
+      mapRef.current.fitToCoordinates(coordsToFit, {
         edgePadding: { top: 100, right: 60, bottom: 320, left: 60 },
         animated: true,
       });
     }
-  }, [helperLocation, victimLocation]);
+  }, [helperLocation, victimLocation, routeCoords]);
 
   const formatElapsed = useCallback(() => {
     const m = Math.floor(elapsedSeconds / 60);
@@ -125,11 +166,23 @@ export default function HelperTrackingScreen({ navigation, route }: Props) {
     return `${m}:${s.toString().padStart(2, '0')}`;
   }, [elapsedSeconds]);
 
-  const handleMarkReached = () => {
+  const handleHelped = () => {
     navigation.replace('SOSCompletion', {
       victimName,
       responseTime: formatElapsed(),
       distanceCovered: distDisplay,
+      outcome: 'helped',
+      notes,
+    });
+  };
+
+  const handleCannotHandle = () => {
+    navigation.replace('SOSCompletion', {
+      victimName,
+      responseTime: formatElapsed(),
+      distanceCovered: distDisplay,
+      outcome: 'cannot_handle',
+      notes,
     });
   };
 
@@ -155,6 +208,9 @@ export default function HelperTrackingScreen({ navigation, route }: Props) {
     );
   };
 
+  // Build the polyline coordinates: real route or straight line fallback
+  const polylineCoords = routeCoords ?? [helperLocation, victimLocation];
+
   return (
     <View style={styles.container}>
       <MapView
@@ -167,18 +223,14 @@ export default function HelperTrackingScreen({ navigation, route }: Props) {
           longitudeDelta: 0.025,
         }}
       >
-        {/* Victim marker */}
         <Marker coordinate={victimLocation} pinColor="#DC2626" title={victimName} description="Victim" />
-
-        {/* Helper marker */}
         <Marker coordinate={helperLocation} pinColor="#2563EB" title="You" description="Helper" />
 
-        {/* Path line between helper and victim */}
         <Polyline
-          coordinates={[helperLocation, victimLocation]}
+          coordinates={polylineCoords}
           strokeColor="#2563EB"
-          strokeWidth={3}
-          lineDashPattern={[8, 6]}
+          strokeWidth={routeCoords ? 4 : 3}
+          lineDashPattern={routeCoords ? undefined : [8, 6]}
         />
       </MapView>
 
@@ -190,6 +242,16 @@ export default function HelperTrackingScreen({ navigation, route }: Props) {
           <Text style={styles.topBarTimer}>{formatElapsed()}</Text>
         </View>
       </View>
+
+      {/* Route loading indicator */}
+      {isLoadingRoute && (
+        <View style={styles.loadingOverlay}>
+          <View style={styles.loadingPill}>
+            <ActivityIndicator size="small" color="#2563EB" />
+            <Text style={styles.loadingText}>Loading route...</Text>
+          </View>
+        </View>
+      )}
 
       {/* Bottom dashboard */}
       <View style={styles.dashboard}>
@@ -215,7 +277,7 @@ export default function HelperTrackingScreen({ navigation, route }: Props) {
           <View style={styles.statDivider} />
           <View style={styles.statItem}>
             <Clock color="#6B7280" size={16} />
-            <Text style={styles.statValue}>{formatEta(distKm)}</Text>
+            <Text style={styles.statValue}>{etaDisplay}</Text>
             <Text style={styles.statLabel}>ETA</Text>
           </View>
           <View style={styles.statDivider} />
@@ -226,17 +288,24 @@ export default function HelperTrackingScreen({ navigation, route }: Props) {
           </View>
         </View>
 
-        {hasReached ? (
-          <TouchableOpacity style={styles.reachedButton} activeOpacity={0.8} onPress={handleMarkReached}>
-            <CheckCircle color="#FFF" size={20} />
-            <Text style={styles.reachedButtonText}>Mark as Reached</Text>
-          </TouchableOpacity>
-        ) : (
-          <View style={styles.enRouteContainer}>
-            <View style={styles.enRoutePill}>
-              <Navigation color="#2563EB" size={14} />
-              <Text style={styles.enRouteText}>En route to victim...</Text>
-            </View>
+        {hasReached && (
+          <View style={styles.resolutionContainer}>
+            <TextInput
+              style={styles.notesInput}
+              placeholder="Add a note (optional)..."
+              placeholderTextColor="#9CA3AF"
+              value={notes}
+              onChangeText={setNotes}
+              multiline
+            />
+            <TouchableOpacity style={styles.helpedButton} activeOpacity={0.8} onPress={handleHelped}>
+              <CheckCircle color="#FFF" size={20} />
+              <Text style={styles.helpedButtonText}>Helped</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.cannotHandleButton} activeOpacity={0.8} onPress={handleCannotHandle}>
+              <XCircle color="#EA580C" size={20} />
+              <Text style={styles.cannotHandleButtonText}>Cannot Handle</Text>
+            </TouchableOpacity>
           </View>
         )}
 
@@ -288,6 +357,31 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     color: '#6B7280',
+  },
+
+  loadingOverlay: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 110 : 90,
+    alignSelf: 'center',
+  },
+  loadingPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.95)',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    gap: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  loadingText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#2563EB',
   },
 
   dashboard: {
@@ -380,26 +474,25 @@ const styles = StyleSheet.create({
     backgroundColor: '#E5E7EB',
   },
 
-  enRouteContainer: {
-    alignItems: 'center',
+  resolutionContainer: {
     marginBottom: 12,
+    gap: 10,
   },
-  enRoutePill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#EFF6FF',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 10,
-    gap: 6,
-  },
-  enRouteText: {
+  notesInput: {
+    backgroundColor: '#F9FAFB',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
     fontSize: 14,
-    fontWeight: '700',
-    color: '#2563EB',
+    fontWeight: '500',
+    color: '#111827',
+    minHeight: 48,
+    maxHeight: 80,
+    textAlignVertical: 'top',
   },
-
-  reachedButton: {
+  helpedButton: {
     flexDirection: 'row',
     backgroundColor: '#16A34A',
     paddingVertical: 16,
@@ -407,17 +500,32 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     gap: 10,
-    marginBottom: 12,
     shadowColor: '#16A34A',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.25,
     shadowRadius: 8,
     elevation: 4,
   },
-  reachedButtonText: {
+  helpedButtonText: {
     color: '#FFF',
     fontSize: 17,
     fontWeight: '800',
+  },
+  cannotHandleButton: {
+    flexDirection: 'row',
+    backgroundColor: '#FFF',
+    paddingVertical: 14,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 8,
+    borderWidth: 1.5,
+    borderColor: '#EA580C',
+  },
+  cannotHandleButtonText: {
+    color: '#EA580C',
+    fontSize: 15,
+    fontWeight: '700',
   },
 
   abortButton: {

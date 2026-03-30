@@ -8,7 +8,7 @@ import {
   Animated,
   Platform,
 } from 'react-native';
-import { CheckCircle, Clock, MapPin, User } from 'lucide-react-native';
+import { CheckCircle, AlertTriangle, Clock, MapPin, User, FileText } from 'lucide-react-native';
 
 import type { ParamListBase } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -18,6 +18,8 @@ type CompletionParams = {
   victimName: string;
   responseTime: string;
   distanceCovered: string;
+  outcome: 'helped' | 'cannot_handle';
+  notes: string;
 };
 
 type Props = {
@@ -30,7 +32,11 @@ export default function SOSCompletionScreen({ navigation, route }: Props) {
     victimName = 'Sarah M.',
     responseTime = '4:32',
     distanceCovered = '0.8 km',
+    outcome = 'helped',
+    notes = '',
   } = route.params ?? {};
+
+  const isHelped = outcome === 'helped';
 
   const scaleAnim = useRef(new Animated.Value(0)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -65,17 +71,23 @@ export default function SOSCompletionScreen({ navigation, route }: Props) {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.content}>
-        {/* Success icon */}
         <Animated.View style={[styles.iconContainer, { transform: [{ scale: scaleAnim }] }]}>
-          <View style={styles.iconCircle}>
-            <CheckCircle color="#FFF" size={48} />
+          <View style={[styles.iconCircle, !isHelped && styles.iconCircleAmber]}>
+            {isHelped ? (
+              <CheckCircle color="#FFF" size={48} />
+            ) : (
+              <AlertTriangle color="#FFF" size={48} />
+            )}
           </View>
         </Animated.View>
 
-        <Text style={styles.title}>Emergency Resolved</Text>
-        <Text style={styles.subtitle}>Thank you for making a difference</Text>
+        <Text style={styles.title}>
+          {isHelped ? 'Emergency Resolved' : 'Response Logged'}
+        </Text>
+        <Text style={styles.subtitle}>
+          {isHelped ? 'Thank you for making a difference' : 'Your effort is still appreciated'}
+        </Text>
 
-        {/* Stats card */}
         <Animated.View style={[styles.card, { opacity: fadeAnim }]}>
           <Text style={styles.cardTitle}>Response Summary</Text>
 
@@ -108,21 +120,44 @@ export default function SOSCompletionScreen({ navigation, route }: Props) {
               <User color="#6B7280" size={18} />
             </View>
             <View style={styles.statContent}>
-              <Text style={styles.statLabel}>Person Helped</Text>
+              <Text style={styles.statLabel}>
+                {isHelped ? 'Person Helped' : 'Person Responded To'}
+              </Text>
               <Text style={styles.statValue}>{victimName}</Text>
             </View>
           </View>
+
+          {notes.trim().length > 0 && (
+            <>
+              <View style={styles.divider} />
+              <View style={styles.statRow}>
+                <View style={styles.statIcon}>
+                  <FileText color="#6B7280" size={18} />
+                </View>
+                <View style={styles.statContent}>
+                  <Text style={styles.statLabel}>Notes</Text>
+                  <Text style={styles.statValue}>{notes}</Text>
+                </View>
+              </View>
+            </>
+          )}
         </Animated.View>
 
-        {/* Impact message */}
-        <Animated.View style={[styles.impactCard, { opacity: fadeAnim }]}>
-          <Text style={styles.impactText}>
-            Your quick response helped someone in need. You're building a safer community.
+        <Animated.View
+          style={[
+            styles.impactCard,
+            !isHelped && styles.impactCardAmber,
+            { opacity: fadeAnim },
+          ]}
+        >
+          <Text style={[styles.impactText, !isHelped && styles.impactTextAmber]}>
+            {isHelped
+              ? "Your quick response helped someone in need. You're building a safer community."
+              : 'The emergency has been flagged for additional responders. Thank you for trying.'}
           </Text>
         </Animated.View>
       </View>
 
-      {/* Done button */}
       <View style={styles.bottomContainer}>
         <TouchableOpacity style={styles.doneButton} activeOpacity={0.8} onPress={handleDone}>
           <Text style={styles.doneButtonText}>Done</Text>
@@ -159,6 +194,10 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 16,
     elevation: 10,
+  },
+  iconCircleAmber: {
+    backgroundColor: '#EA580C',
+    shadowColor: '#EA580C',
   },
 
   title: {
@@ -236,12 +275,18 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     padding: 16,
   },
+  impactCardAmber: {
+    backgroundColor: '#FFF7ED',
+  },
   impactText: {
     fontSize: 14,
     fontWeight: '600',
     color: '#16A34A',
     textAlign: 'center',
     lineHeight: 20,
+  },
+  impactTextAmber: {
+    color: '#EA580C',
   },
 
   bottomContainer: {
