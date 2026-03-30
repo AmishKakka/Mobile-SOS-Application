@@ -2,7 +2,7 @@ const { Server } = require("socket.io");
 // const mongoose = require("mongoose");
 // const User = mongoose.model('User'); 
 // const Incident = mongoose.model('Incident');
-const { triggerSOS } = require("./dynamicProximitySearch"); 
+const { triggerSOS } = require("../services/dynamicProximitySearch"); 
 
 // Map of RoomId -> { victimSocketId: string, currentSosTimeoutId: Timeout, rejectionCount: number }
 const activeEmergencyRooms = new Map();
