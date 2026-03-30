@@ -12,8 +12,7 @@
     "h3-js": "^4.4.0",
     "ioredis": "^5.10.0",
     "mongoose": "^9.2.3",
-    "socket.io": "^4.8.3",
-    "redis": "^5.11.0"
+    "socket.io": "^4.8.3"
   },
   "devDependencies": {
     "socket.io-client": "^4.8.3"
