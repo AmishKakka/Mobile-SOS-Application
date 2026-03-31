@@ -23,9 +23,12 @@ resource "aws_ecs_task_definition" "safeguard_task" {
     portMappings = [{ containerPort = 3000, protocol = "tcp" }]
 
     environment = [
-      { name = "NODE_ENV", value = "production" },
-      { name = "PORT", value = "3000" },
-      { name = "REDIS_HOST", value = var.redis_host }
+      { name = "NODE_ENV",                      value = "production" },
+      { name = "PORT",                          value = "3000" },
+      { name = "REDIS_HOST",                    value = var.redis_host },
+      { name = "COGNITO_USER_POOL_ID",          value = var.cognito_user_pool_id },
+      { name = "COGNITO_USER_POOL_CLIENT_ID",   value = var.cognito_user_pool_client_id },
+      { name = "AWS_REGION",                    value = "us-east-1" },
     ]
 
     logConfiguration = {
