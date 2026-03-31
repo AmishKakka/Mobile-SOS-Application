@@ -1,8 +1,7 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, Dimensions, Linking, Alert, TouchableOpacity, Animated, SafeAreaView, Platform } from 'react-native';
-import MapView, { Marker, Circle } from 'react-native-maps';
-import { Shield, Clock, Delete, Users, MapPin } from "lucide-react-native";
-import { InteractionManager } from 'react-native';
+import { Delete, Shield } from "lucide-react-native";
+import React, { useEffect, useRef, useState } from 'react';
+import { Alert, Dimensions, Linking, SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import MapView, { Circle, Marker } from 'react-native-maps';
 
 const { width } = Dimensions.get('window');
 
@@ -12,8 +11,8 @@ export default function DynamicProximitySearch({ navigation, route }) {
     const [isEscalated, setIsEscalated] = useState(false);
     const [showPinPrompt, setShowPinPrompt] = useState(false);
     const [pin, setPin] = useState("");
-    
-    const CORRECT_PIN = "1234"; 
+
+    const CORRECT_PIN = "1234";
     const socket = route.params?.socket;
 
     // Hardcoded location for UI consistency
@@ -58,7 +57,7 @@ export default function DynamicProximitySearch({ navigation, route }) {
                 // SUCCESS: Go back to the Dashboard
                 setPin("");
                 setShowPinPrompt(false);
-                navigation.navigate('MainDashboard'); 
+                navigation.navigate('MainDashboard');
             } else {
                 // FAIL: Clear pin after short delay
                 setTimeout(() => setPin(""), 300);
@@ -97,7 +96,7 @@ export default function DynamicProximitySearch({ navigation, route }) {
                     </View>
                     <Text style={styles.pinTitle}>Security Verification</Text>
                     <Text style={styles.pinSub}>Enter your 4-digit PIN to cancel the emergency alert</Text>
-                    
+
                     <View style={styles.pinBoxContainer}>
                         {[0, 1, 2, 3].map((index) => (
                             <View key={`pin-${index}`} style={styles.pinBox}>
@@ -119,7 +118,7 @@ export default function DynamicProximitySearch({ navigation, route }) {
                         </View>
                     </View>
 
-                    <TouchableOpacity style={styles.returnButton} onPress={() => {setShowPinPrompt(false); setPin("");}}>
+                    <TouchableOpacity style={styles.returnButton} onPress={() => { setShowPinPrompt(false); setPin(""); }}>
                         <Text style={styles.returnButtonText}>Return to SOS</Text>
                     </TouchableOpacity>
                 </View>
