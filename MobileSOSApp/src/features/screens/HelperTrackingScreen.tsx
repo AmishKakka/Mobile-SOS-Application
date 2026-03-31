@@ -34,7 +34,7 @@ type Props = {
   route: RouteProp<{ params: TrackingParams }, 'params'>;
 };
 
-const HELPER_START = { latitude: 33.4225, longitude: -111.9320 };
+const HELPER_START = { latitude: 33.5, longitude: -111.320 };
 const TOTAL_STEPS = 30;
 const STEP_INTERVAL_MS = 2000;
 const REACHED_THRESHOLD_KM = 0.05;
@@ -66,7 +66,7 @@ function interpolatePosition(
 export default function HelperTrackingScreen({ navigation, route: navRoute }: Props) {
   const {
     victimName = 'Sarah M.',
-    victimLocation = { latitude: 33.4152, longitude: -111.9263 },
+    victimLocation = { latitude: 33.4152, longitude: -110.92 },
     incidentType = 'Medical Emergency',
   } = navRoute.params ?? {};
 
