@@ -1,0 +1,44 @@
+sequenceDiagram
+  participant User as User
+  participant Main as MainDashboard
+  participant NAV as NavigationContainer
+  participant DPS as DynamicProximitySearch
+  participant Socket as SocketServer
+  participant HelperDash as HelperDashboard
+  participant HelperNotif as HelperSOSNotification
+  participant HelperTrack as HelperTracking
+  participant Directions as DirectionsAPI
+  participant Phone as Phone
+
+  User->>Main: pressSOS()  (onPress handler in `MainDashboard`)
+  Main->>NAV: navigation.navigate('EmergencySearch')
+  NAV->>DPS: render `DynamicProximitySearch` (route: EmergencySearch)
+  DPS->>DPS: setState(radiusInMeters=250)
+  DPS->>Socket: (conceptual) emit 'sos_alert' to server
+
+  alt server expands search
+    Socket-->>DPS: 'search_expanded' (payload: { radius: 1000 })
+    DPS->>DPS: setRadiusInMeters(1000); animateToRegion(...)
+  end
+
+  alt escalation reached
+    Socket-->>DPS: 'max_radius_reached'
+    DPS->>Phone: Linking.openURL('tel:911')  -- opens dialer to call 911
+  end
+
+  Note right of Socket: Server notifies helpers via socket
+  Socket-->>HelperDash: 'incoming_sos' (victim params)
+  HelperDash->>HelperNotif: navigation.navigate('HelperSOSNotification', params)
+
+  HelperNotif->>HelperTrack: navigation.replace('HelperTracking', params)
+  HelperTrack->>Directions: fetchRoute(HELPER_START, victimLocation, GOOGLE_MAPS_API_KEY)
+  Directions-->>HelperTrack: { coordinates, distanceText, durationText } (or null)
+  HelperTrack->>HelperTrack: simulate movement along route (setHelperLocation)
+
+  alt helper arrives
+    HelperTrack->>NAV: navigation.replace('SOSCompletion', { victimName, responseTime, distanceCovered, outcome })
+    NAV->>SOSComplete: render `SOSCompletion` screen
+    SOSComplete->>NAV: navigation.reset([{ AuthScreen }, { MainDashboard }, { HelperDashboard }])
+  end
+
+  Note left of Main: Auth flow uses navigation.replace('MainDashboard') after sign-in

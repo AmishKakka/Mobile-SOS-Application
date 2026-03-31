@@ -1,0 +1,41 @@
+flowchart LR
+  subgraph AUTH["Auth Flow"]
+    Auth["AuthScreen\n(Sign in / Register)"]
+  end
+
+  subgraph USER["User Flow (SOS Trigger)"]
+    Main["MainDashboard\n(Map + SOS button)"]
+    Search["DynamicProximitySearch\n(EmergencySearch)"]
+    Contacts["EmergencyContacts"]
+    Settings["SettingsScreen\n(SettingsHome)"]
+    Edit["EditProfile"]
+  end
+
+  subgraph HELPER["Helper Flow (Responder)"]
+    HelperDash["HelperDashboard"]
+    HelperNotif["HelperSOSNotification"]
+    HelperTrack["HelperTracking"]
+    Completion["SOSCompletion"]
+    Guidelines["HelperGuidelines"]
+  end
+
+  Auth -->|replace('MainDashboard')| Main
+  Main -->|navigate('EmergencySearch')| Search
+  Main -->|navigate('EmergencyContacts')| Contacts
+  Main -->|navigate('SettingsHome')| Settings
+  Settings -->|navigate('EditProfile')| Edit
+  Settings -->|navigate('HelperDashboard')| HelperDash
+
+  HelperDash -->|navigate('HelperSOSNotification', params)| HelperNotif
+  HelperNotif -->|replace('HelperTracking', params)| HelperTrack
+  HelperTrack -->|replace('SOSCompletion', params)| Completion
+  Completion -->|reset([AuthScreen, MainDashboard, HelperDashboard])| Auth
+
+  Search -->|PIN success: navigate('MainDashboard')| Main
+  Search -->|Escalation: CALL 911| CALL911["CALL 911"]
+
+  HelperTrack -.->|uses| Util["fetchRoute()\n(src/utils/directions.ts)"]
+  HelperDash -->|open HelperGuidelines| Guidelines
+
+  classDef nodeFill fill:#fff,stroke:#e5e7eb,stroke-width:1px;
+  class Auth,Main,Search,Contacts,Settings,Edit,HelperDash,HelperNotif,HelperTrack,Completion,Guidelines nodeFill;

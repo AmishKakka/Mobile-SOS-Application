@@ -11,7 +11,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import MapView, { Marker, Polyline } from 'react-native-maps';
-import { Navigation, MapPin, Clock, X, CheckCircle, XCircle } from 'lucide-react-native';
+import { Navigation, MapPin, Clock, X, CheckCircle, XCircle, Car, PersonStanding } from 'lucide-react-native';
 
 import type { ParamListBase } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -77,6 +77,7 @@ export default function HelperTrackingScreen({ navigation, route: navRoute }: Pr
   const [routeCoords, setRouteCoords] = useState<{ latitude: number; longitude: number }[] | null>(null);
   const [routeInfo, setRouteInfo] = useState<{ distanceText: string; durationText: string } | null>(null);
   const [isLoadingRoute, setIsLoadingRoute] = useState(true);
+  const [travelMode, setTravelMode] = useState<'DRIVE' | 'WALK'>('DRIVE');
   const mapRef = useRef<MapView>(null);
   const stepRef = useRef(0);
 
@@ -88,12 +89,19 @@ export default function HelperTrackingScreen({ navigation, route: navRoute }: Pr
       : `${distKm.toFixed(2)} km`;
   const etaDisplay = routeInfo ? routeInfo.durationText : `${Math.max(1, Math.round(distKm / 0.08))} min`;
 
-  // Fetch route from Google Directions API on mount
+  // Fetch route whenever victimLocation or travelMode changes
   useEffect(() => {
     let cancelled = false;
 
+    // Reset state for fresh fetch
+    setIsLoadingRoute(true);
+    setRouteCoords(null);
+    setRouteInfo(null);
+    setHelperLocation(HELPER_START);
+    stepRef.current = 0;
+
     (async () => {
-      const result = await fetchRoute(HELPER_START, victimLocation, GOOGLE_MAPS_API_KEY);
+      const result = await fetchRoute(HELPER_START, victimLocation, GOOGLE_MAPS_API_KEY, travelMode);
 
       if (cancelled) return;
       setIsLoadingRoute(false);
@@ -108,7 +116,7 @@ export default function HelperTrackingScreen({ navigation, route: navRoute }: Pr
     })();
 
     return () => { cancelled = true; };
-  }, [victimLocation]);
+  }, [victimLocation, travelMode]);
 
   // Animate helper along route coordinates (or straight line as fallback)
   useEffect(() => {
@@ -255,6 +263,30 @@ export default function HelperTrackingScreen({ navigation, route: navRoute }: Pr
           </View>
         </View>
 
+        {/* Travel mode toggle */}
+        <View style={styles.modeToggle}>
+          <TouchableOpacity
+            style={[styles.modeButton, travelMode === 'DRIVE' && styles.modeButtonActive]}
+            onPress={() => setTravelMode('DRIVE')}
+            activeOpacity={0.8}
+          >
+            <Car color={travelMode === 'DRIVE' ? '#FFF' : '#6B7280'} size={16} />
+            <Text style={[styles.modeButtonText, travelMode === 'DRIVE' && styles.modeButtonTextActive]}>
+              Drive
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.modeButton, travelMode === 'WALK' && styles.modeButtonActive]}
+            onPress={() => setTravelMode('WALK')}
+            activeOpacity={0.8}
+          >
+            <PersonStanding color={travelMode === 'WALK' ? '#FFF' : '#6B7280'} size={16} />
+            <Text style={[styles.modeButtonText, travelMode === 'WALK' && styles.modeButtonTextActive]}>
+              Walk
+            </Text>
+          </TouchableOpacity>
+        </View>
+
         <View style={styles.statsRow}>
           <View style={styles.statItem}>
             <MapPin color="#6B7280" size={16} />
@@ -352,6 +384,38 @@ const styles = StyleSheet.create({
     elevation: 10,
   },
 
+  modeToggle: {
+    flexDirection: 'row',
+    backgroundColor: '#F3F4F6',
+    borderRadius: 12,
+    padding: 4,
+    marginBottom: 12,
+  },
+  modeButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    borderRadius: 9,
+  },
+  modeButtonActive: {
+    backgroundColor: '#2563EB',
+    shadowColor: '#2563EB',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  modeButtonText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#6B7280',
+  },
+  modeButtonTextActive: {
+    color: '#FFF',
+  },
   victimRow: {
     flexDirection: 'row',
     alignItems: 'center',
