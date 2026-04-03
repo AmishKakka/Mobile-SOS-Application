@@ -1,0 +1,11 @@
+services:
+  mongosh:
+    image: mongo:7
+    container_name: mongosh-atlas
+    stdin_open: true
+    tty: true
+    working_dir: /work
+    volumes:
+      - ./:/work
+    command: >
+      mongosh "mongodb+srv://cluster1.tdiusuq.mongodb.net/" --apiVersion 1 --username nisarg21 --password SosProject
