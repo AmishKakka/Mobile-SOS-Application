@@ -3,6 +3,7 @@ import React from 'react';
 import AuthScreen from '../features/auth/AuthScreen';
 import EditProfileScreen from '../features/screens/EditProfileScreen';
 import EmergencyContactsScreen from '../features/screens/EmergencyContactsScreen';
+import MedicalProfileScreen from '../features/screens/MedicalProfileScreen';
 import HelperDashboardScreen from '../features/screens/HelperDashBoard';
 import HelperSOSNotificationScreen from '../features/screens/HelperSOSNotificationScreen';
 import HelperTrackingScreen from '../features/screens/HelperTrackingScreen';
@@ -49,6 +50,11 @@ const SettingsStack = () => {
         name="EmergencyContacts"
         component={EmergencyContactsScreen}
         options={{ title: 'Emergency Contacts' }}
+      />
+      <Stack.Screen
+        name="MedicalProfile"
+        component={MedicalProfileScreen}
+        options={{ title: 'Medical Profile' }}
       />
       <Stack.Screen
         name="HelperSOSNotification"
