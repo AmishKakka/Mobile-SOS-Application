@@ -1,3 +1,7 @@
+data "aws_caller_identity" "current" {}
+data "aws_region" "current" {}
+
+
 resource "aws_iam_role" "ecs_execution" {
   name = "sos-app-ecs-execution-role"
   assume_role_policy = jsonencode({
@@ -24,7 +28,7 @@ resource "aws_iam_role_policy" "ecs_secrets_access" {
     Statement = [{
       Effect = "Allow"
       Action = ["secretsmanager:GetSecretValue"]
-      Resource = "arn:aws:secretsmanager:us-east-1:582287676827:secret:sos-app/*"
+      Resource = "arn:aws:secretsmanager:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:secret:sos-app/*"
     }]
   })
 }
