@@ -1,4 +1,5 @@
 const { Server } = require('socket.io');
+const { createAdapter } = require('@socket.io/redis-adapter');
 const { triggerSOS, setRedisClient } = require('../services/dynamicProximitySearch');
 
 // roomId -> { victimSocketId, currentSosTimeoutId, rejectionCount, originalVictimLocation }
@@ -8,6 +9,7 @@ module.exports = function initializeSocket(server, redisClient, pubClient, subCl
   setRedisClient(redisClient);
 
   const io = new Server(server, { cors: { origin: '*' } });
+  io.adapter(createAdapter(pubClient, subClient));
 
   io.on('connection', (socket) => {
     console.log(`[CONNECTED] ${socket.id}`);
@@ -79,7 +81,7 @@ module.exports = function initializeSocket(server, redisClient, pubClient, subCl
       io.to(emergencyState.victimSocketId).emit('helper_assigned', {
         helperId,
         helperName: helperName || helperId,
-        message:    'Someone is on the way to help you!',
+        message: 'Someone is on the way to help you!',
       });
 
       // Tell other notified helpers to dismiss the alert
@@ -184,10 +186,10 @@ module.exports = function initializeSocket(server, redisClient, pubClient, subCl
       //    This is the key event the frontend listens for
       io.to(emergencyState.victimSocketId).emit(`sos_helpers_${roomId}`, {
         helpers: helpersToNotify.map(h => ({
-          userId:   h.userId,
-          name:     h.name || `Volunteer ${h.userId.slice(-3)}`,
-          lat:      h.lat,
-          long:     h.long,
+          userId: h.userId,
+          name: h.name || `Volunteer ${h.userId.slice(-3)}`,
+          lat: h.lat,
+          long: h.long,
           distance: h.distance,
         })),
       });

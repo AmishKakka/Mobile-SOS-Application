@@ -50,7 +50,7 @@ resource "aws_ecs_service" "safeguard_service" {
   launch_type     = "FARGATE"
 
   network_configuration {
-    subnets          = [var.private_subnet_a]
+    subnets          = [var.private_subnet_a, var.private_subnet_b]
     security_groups  = [var.ecs_sg_id]
     assign_public_ip = false
   }

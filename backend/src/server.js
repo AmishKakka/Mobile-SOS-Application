@@ -21,7 +21,7 @@ app.use(express.json());
 
 const server = http.createServer(app);
 
-// app.get('/health', (req, res) => res.status(200).json({ status: 'ok' }));
+app.get('/health', (req, res) => res.status(200).json({ status: 'ok' }));
 
 // Three separate clients are required:
 //   - redisClient : general reads/writes
