@@ -10,7 +10,7 @@ resource "aws_subnet" "public" {
   cidr_block              = "10.0.1.0/24"
   availability_zone       = "us-east-1a"
   map_public_ip_on_launch = true
-  tags = { Name = "sos-app-public" }
+  tags = { Name = "sos-app-public-a" }
 }
 
 resource "aws_subnet" "public_b" {
@@ -62,7 +62,7 @@ resource "aws_route_table" "public" {
   tags = { Name = "sos-app-public-rt" }
 }
 
-resource "aws_route_table_association" "public" {
+resource "aws_route_table_association" "public_a" {
   subnet_id      = aws_subnet.public.id
   route_table_id = aws_route_table.public.id
 }
