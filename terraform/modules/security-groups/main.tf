@@ -26,7 +26,7 @@ resource "aws_security_group" "alb_sg" {
 
 resource "aws_security_group" "ecs_sg" {
   name        = "sos-app-ecs-sg"
-  description = "ECS tasks — only ALB can send traffic in"
+  description = "ECS tasks only ALB can send traffic in"
   vpc_id      = var.vpc_id
 
   ingress {
@@ -46,7 +46,7 @@ resource "aws_security_group" "ecs_sg" {
 
 resource "aws_security_group" "redis_sg" {
   name        = "sos-app-redis-sg"
-  description = "ElastiCache Redis — only ECS tasks can connect"
+  description = "ElastiCache Redis only ECS tasks can connect"
   vpc_id      = var.vpc_id
 
   ingress {

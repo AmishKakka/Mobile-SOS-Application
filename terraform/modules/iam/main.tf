@@ -28,7 +28,7 @@ resource "aws_iam_role_policy" "ecs_secrets_access" {
     Statement = [{
       Effect = "Allow"
       Action = ["secretsmanager:GetSecretValue"]
-      Resource = "arn:aws:secretsmanager:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:secret:sos-app/*"
+      Resource = "arn:aws:secretsmanager:${data.aws_region.current.id}:${data.aws_caller_identity.current.account_id}:secret:sos-app/*"
     }]
   })
 }
