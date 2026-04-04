@@ -1,98 +1,107 @@
+const Redis = require('ioredis');
 const h3 = require('h3-js');
 
 const MAX_RINGS = 18;
 const MAX_HELPERS = 5;
-const H3_RES = 9;
-let _redisClient = null;
+H3_RESOLUTION = 9; // ~0.7 miles per cell at the equator
+let redisClient;
 
-/**
- * Called once from socket.js to inject the shared Redis client.
- */
-function setRedisClient(client) {
-  _redisClient = client;
-}
+function getRedisClient() {
+    if (!redisClient) {
+        redisClient = new Redis({
+            maxRetriesPerRequest: 1,
+            retryStrategy: () => null,
+        });
 
-/**
- * triggerSOS
- * Expands outward from the victim's H3 cell ring by ring until
- * MAX_HELPERS are found or MAX_RINGS is exhausted.
- *
- * @param {number}   victimLat   - Victim latitude
- * @param {number}   victimLng   - Victim longitude
- * @param {string[]} rejectIds   - UserIds already notified (skip them)
- * @returns {Array}  Array of { userId, lat, long, distance, name }
- */
-async function triggerSOS(victimLat, victimLng, rejectIds = []) {
-  if (!Number.isFinite(victimLat) || !Number.isFinite(victimLng)) {
-    throw new TypeError('victimLat and victimLng must be valid numbers.');
-  }
-  if (!_redisClient) {
-    throw new Error('Redis client not set. Call setRedisClient() first.');
-  }
-
-  const redis        = _redisClient;
-  const rejectSet    = new Set(rejectIds.map(String));
-  const victimCell   = h3.latLngToCell(victimLat, victimLng, H3_RES);
-
-  // Start with helpers in the victim's own cell
-  let helpersPool = (await redis.smembers(`active-users:${victimCell}`))
-    .filter(id => !rejectSet.has(id));
-
-  // Expand ring by ring until we have enough
-  let ring = 1;
-  while (helpersPool.length < MAX_HELPERS && ring <= MAX_RINGS) {
-    const ringCells = h3.gridRing(victimCell, ring);
-
-    for (const cell of ringCells) {
-      const cellHelpers = (await redis.smembers(`active-users:${cell}`))
-        .filter(id => !rejectSet.has(id));
-      helpersPool = [...new Set([...helpersPool, ...cellHelpers])];
+        redisClient.on('error', () => {
+            // Keep runtime logs clean; callers handle user-facing errors.
+        });
     }
 
-    if (helpersPool.length >= MAX_HELPERS) break;
-    ring++;
-  }
-
-  if (helpersPool.length === 0) return [];
-
-  // Fetch full location details for each helper in one pipeline
-  const pipeline = redis.multi();
-  for (const id of helpersPool) {
-    pipeline.hgetall(`last-location:${id}`);
-  }
-  const results = await pipeline.exec();
-
-  const helpersDetail = [];
-  for (let i = 0; i < results.length; i++) {
-    const [err, loc] = results[i];
-    if (err || !loc?.lat || !loc?.long) continue;
-
-    const helperLat = parseFloat(loc.lat);
-    const helperLng = parseFloat(loc.long);
-    const distance  = haversineMeters(victimLat, victimLng, helperLat, helperLng);
-
-    helpersDetail.push({
-      userId:   helpersPool[i],
-      name:     loc.name || `Volunteer ${helpersPool[i].slice(-3)}`,
-      lat:      helperLat,
-      long:     helperLng,
-      distance,
-    });
-  }
-
-  helpersDetail.sort((a, b) => a.distance - b.distance);
-  return helpersDetail.slice(0, MAX_HELPERS);
+    return redisClient;
 }
 
-function haversineMeters(lat1, lng1, lat2, lng2) {
-  const R    = 6371000;
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLng = (lng2 - lng1) * Math.PI / 180;
-  const phi1 = lat1 * Math.PI / 180;
-  const phi2 = lat2 * Math.PI / 180;
-  const a    = Math.sin(dLat / 2) ** 2 +
-               Math.cos(phi1) * Math.cos(phi2) * Math.sin(dLng / 2) ** 2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+async function triggerSOS(victimLat, victimLng, rejectIds = []) {
+    if (!Number.isFinite(victimLat) || !Number.isFinite(victimLng)) {
+        throw new TypeError('victimLat and victimLng must be valid numbers.');
+    }
+    if (!Array.isArray(rejectIds)) {
+        throw new TypeError('rejectIds must be an array.');
+    }
+
+    const redis = getRedisClient();
+    const rejectIdsSet = new Set(rejectIds.map(String));
+    const victimCell = h3.latLngToCell(victimLat, victimLng, H3_RESOLUTION);
+
+    let helpersPool = (await redis.smembers(`active-users:${victimCell}`))
+        .filter((userId) => !rejectIdsSet.has(userId));
+
+    let currentRing = 1;
+    while (helpersPool.length < MAX_HELPERS && currentRing <= MAX_RINGS) {
+        const ringCells = h3.gridRing(victimCell, currentRing);
+
+        for (const cell of ringCells) {
+            const ringHelpers = (await redis.smembers(`active-users:${cell}`))
+                .filter((userId) => !rejectIdsSet.has(userId));
+            helpersPool = [...new Set([...helpersPool, ...ringHelpers])];           
+        }
+        
+        if (helpersPool.length >= MAX_HELPERS) {
+            break;
+        }
+
+        currentRing++;
+    }
+
+    if (helpersPool.length === 0) {
+        return []; // No helpers found in any ring, return empty array to trigger 911 escalation
+    }
+
+    const pipeline = redis.multi();
+    for (const helperId of helpersPool) {
+        pipeline.hgetall(`last-location:${helperId}`);
+    }
+
+    const results = await pipeline.exec();
+    const helpersDetail = [];
+
+    for (let i = 0; i < results.length; i++) {
+        const [error, locationData] = results[i];
+        if (error || !locationData || !locationData.lat || !locationData.long) {
+            continue;
+        }
+
+        const helperLat = parseFloat(locationData.lat);
+        const helperLng = parseFloat(locationData.long);
+        const distance = calculateDistance(victimLat, victimLng, helperLat, helperLng);
+
+        helpersDetail.push({
+            userId: helpersPool[i],
+            distance,
+            lat: helperLat,
+            long: helperLng,
+        });
+    }
+
+    helpersDetail.sort((a, b) => a.distance - b.distance);
+    return helpersDetail.slice(0, MAX_HELPERS);
 }
 
-module.exports = { triggerSOS, setRedisClient };
+function calculateDistance(victimLat, victimLng, lat2, long2) {
+    const earthRadiusMeters = 6371e3;
+    const dLat = (lat2 - victimLat) * Math.PI / 180;
+    const dLon = (long2 - victimLng) * Math.PI / 180;
+    const phi1 = victimLat * Math.PI / 180;
+    const phi2 = lat2 * Math.PI / 180;
+
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(phi1) * Math.cos(phi2) *
+        Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+    return earthRadiusMeters * c;
+}
+
+module.exports = {
+    triggerSOS,
+};
