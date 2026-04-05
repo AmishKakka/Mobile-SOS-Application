@@ -4,20 +4,22 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  TextInput,
   Dimensions,
   Platform,
   Alert,
   ActivityIndicator,
+  Modal,
+  Linking,
+  ScrollView,
 } from 'react-native';
 import MapView, { Marker, Polyline } from 'react-native-maps';
-import { Navigation, MapPin, Clock, X, CheckCircle, XCircle, Car, PersonStanding } from 'lucide-react-native';
+import { Navigation, MapPin, Clock, CheckCircle, AlertTriangle, X, Phone, Car, PersonStanding } from 'lucide-react-native';
 
 import type { ParamListBase } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
 
-import { fetchRoute, type RouteResult } from '../../utils/directions';
+import { fetchRoute } from '../../utils/directions';
 import { GOOGLE_MAPS_API_KEY } from '../../config/keys';
 
 const { width } = Dimensions.get('window');
@@ -37,7 +39,14 @@ type Props = {
 const HELPER_START = { latitude: 33.5, longitude: -111.320 };
 const TOTAL_STEPS = 30;
 const STEP_INTERVAL_MS = 2000;
-const REACHED_THRESHOLD_KM = 0.05;
+
+const UNABLE_REASONS = [
+  'Cannot locate victim',
+  'Situation too dangerous',
+  'Medical expertise required',
+  'Already resolved / False alarm',
+  'Other',
+];
 
 function haversineKm(
   a: { latitude: number; longitude: number },
@@ -71,13 +80,13 @@ export default function HelperTrackingScreen({ navigation, route: navRoute }: Pr
   } = navRoute.params ?? {};
 
   const [helperLocation, setHelperLocation] = useState(HELPER_START);
-  const [hasReached, setHasReached] = useState(false);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
-  const [notes, setNotes] = useState('');
   const [routeCoords, setRouteCoords] = useState<{ latitude: number; longitude: number }[] | null>(null);
   const [routeInfo, setRouteInfo] = useState<{ distanceText: string; durationText: string } | null>(null);
   const [isLoadingRoute, setIsLoadingRoute] = useState(true);
   const [travelMode, setTravelMode] = useState<'DRIVE' | 'WALK'>('DRIVE');
+  const [showUnableModal, setShowUnableModal] = useState(false);
+  const [selectedReason, setSelectedReason] = useState<string | null>(null);
   const mapRef = useRef<MapView>(null);
   const stepRef = useRef(0);
 
@@ -150,13 +159,6 @@ export default function HelperTrackingScreen({ navigation, route: navRoute }: Pr
     return () => clearInterval(timer);
   }, []);
 
-  // Detect arrival
-  useEffect(() => {
-    if (distKm <= REACHED_THRESHOLD_KM && !hasReached) {
-      setHasReached(true);
-    }
-  }, [distKm, hasReached]);
-
   // Fit map to both markers (and route) whenever helper moves
   useEffect(() => {
     if (mapRef.current) {
@@ -174,29 +176,33 @@ export default function HelperTrackingScreen({ navigation, route: navRoute }: Pr
     return `${m}:${s.toString().padStart(2, '0')}`;
   }, [elapsedSeconds]);
 
-  const handleHelped = () => {
+  const handleMarkedAsReached = () => {
     navigation.replace('SOSCompletion', {
       victimName,
       responseTime: formatElapsed(),
       distanceCovered: distDisplay,
       outcome: 'helped',
-      notes,
     });
   };
 
-  const handleCannotHandle = () => {
+  const handleUnableSubmit = () => {
+    setShowUnableModal(false);
     navigation.replace('SOSCompletion', {
       victimName,
       responseTime: formatElapsed(),
       distanceCovered: distDisplay,
       outcome: 'cannot_handle',
-      notes,
+      reason: selectedReason ?? 'Other',
     });
+  };
+
+  const handleCall911 = () => {
+    Linking.openURL('tel:911');
   };
 
   const handleAbort = () => {
     Alert.alert(
-      'Abort Response',
+      'Abort Help',
       'Are you sure you want to stop responding to this emergency?',
       [
         { text: 'Continue', style: 'cancel' },
@@ -307,32 +313,95 @@ export default function HelperTrackingScreen({ navigation, route: navRoute }: Pr
           </View>
         </View>
 
-        {hasReached && (
-          <View style={styles.resolutionContainer}>
-            <TextInput
-              style={styles.notesInput}
-              placeholder="Add a note (optional)..."
-              placeholderTextColor="#9CA3AF"
-              value={notes}
-              onChangeText={setNotes}
-              multiline
-            />
-            <TouchableOpacity style={styles.helpedButton} activeOpacity={0.8} onPress={handleHelped}>
-              <CheckCircle color="#FFF" size={20} />
-              <Text style={styles.helpedButtonText}>Helped</Text>
+        <View style={styles.actionButtons}>
+          <TouchableOpacity style={styles.reachedButton} activeOpacity={0.8} onPress={handleMarkedAsReached}>
+            <CheckCircle color="#FFF" size={20} />
+            <Text style={styles.reachedButtonText}>Marked as Reached</Text>
+          </TouchableOpacity>
+
+          <View style={styles.secondaryRow}>
+            <TouchableOpacity
+              style={styles.unableButton}
+              activeOpacity={0.8}
+              onPress={() => { setSelectedReason(null); setShowUnableModal(true); }}
+            >
+              <AlertTriangle color="#EA580C" size={18} />
+              <Text style={styles.unableButtonText}>Unable to Resolve</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.cannotHandleButton} activeOpacity={0.8} onPress={handleCannotHandle}>
-              <XCircle color="#EA580C" size={20} />
-              <Text style={styles.cannotHandleButtonText}>Cannot Handle</Text>
+
+            <TouchableOpacity style={styles.abortButton} activeOpacity={0.8} onPress={handleAbort}>
+              <X color="#DC2626" size={18} />
+              <Text style={styles.abortButtonText}>Abort Help</Text>
             </TouchableOpacity>
           </View>
-        )}
-
-        <TouchableOpacity style={styles.abortButton} activeOpacity={0.8} onPress={handleAbort}>
-          <X color="#6B7280" size={18} />
-          <Text style={styles.abortButtonText}>Cancel</Text>
-        </TouchableOpacity>
+        </View>
       </View>
+
+      {/* Unable to Resolve Modal */}
+      <Modal
+        visible={showUnableModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowUnableModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Why can't you resolve this?</Text>
+            <Text style={styles.modalSubtitle}>Select a reason below</Text>
+
+            <ScrollView style={styles.reasonList} bounces={false}>
+              {UNABLE_REASONS.map((reason) => (
+                <TouchableOpacity
+                  key={reason}
+                  style={[
+                    styles.reasonItem,
+                    selectedReason === reason && styles.reasonItemSelected,
+                  ]}
+                  activeOpacity={0.7}
+                  onPress={() => setSelectedReason(reason)}
+                >
+                  <View style={[
+                    styles.reasonRadio,
+                    selectedReason === reason && styles.reasonRadioSelected,
+                  ]}>
+                    {selectedReason === reason && <View style={styles.reasonRadioDot} />}
+                  </View>
+                  <Text style={[
+                    styles.reasonText,
+                    selectedReason === reason && styles.reasonTextSelected,
+                  ]}>
+                    {reason}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+
+            <TouchableOpacity style={styles.call911Button} activeOpacity={0.8} onPress={handleCall911}>
+              <Phone color="#FFF" size={18} />
+              <Text style={styles.call911Text}>Call 911</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.modalSubmitButton, !selectedReason && styles.modalSubmitDisabled]}
+              activeOpacity={selectedReason ? 0.8 : 1}
+              disabled={!selectedReason}
+              onPress={handleUnableSubmit}
+            >
+              <Text style={[styles.modalSubmitText, !selectedReason && styles.modalSubmitTextDisabled]}>
+                Submit
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.modalCancelButton}
+              activeOpacity={0.8}
+              onPress={() => setShowUnableModal(false)}
+            >
+              <Text style={styles.modalCancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -472,25 +541,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#E5E7EB',
   },
 
-  resolutionContainer: {
-    marginBottom: 12,
+  actionButtons: {
     gap: 10,
   },
-  notesInput: {
-    backgroundColor: '#F9FAFB',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#111827',
-    minHeight: 48,
-    maxHeight: 80,
-    textAlignVertical: 'top',
-  },
-  helpedButton: {
+  reachedButton: {
     flexDirection: 'row',
     backgroundColor: '#16A34A',
     paddingVertical: 16,
@@ -504,38 +558,166 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 4,
   },
-  helpedButtonText: {
+  reachedButtonText: {
     color: '#FFF',
     fontSize: 17,
     fontWeight: '800',
   },
-  cannotHandleButton: {
+  secondaryRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  unableButton: {
+    flex: 1,
     flexDirection: 'row',
     backgroundColor: '#FFF',
-    paddingVertical: 14,
-    borderRadius: 14,
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 8,
-    borderWidth: 1.5,
-    borderColor: '#EA580C',
-  },
-  cannotHandleButtonText: {
-    color: '#EA580C',
-    fontSize: 15,
-    fontWeight: '700',
-  },
-
-  abortButton: {
-    flexDirection: 'row',
-    backgroundColor: '#F3F4F6',
     paddingVertical: 14,
     borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
+    borderWidth: 1.5,
+    borderColor: '#EA580C',
+  },
+  unableButtonText: {
+    color: '#EA580C',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  abortButton: {
+    flex: 1,
+    flexDirection: 'row',
+    backgroundColor: '#FEF2F2',
+    paddingVertical: 14,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 6,
+    borderWidth: 1.5,
+    borderColor: '#FECACA',
   },
   abortButtonText: {
+    color: '#DC2626',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: '#FFF',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingTop: 24,
+    paddingHorizontal: 24,
+    paddingBottom: Platform.OS === 'ios' ? 40 : 28,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#111827',
+    marginBottom: 4,
+  },
+  modalSubtitle: {
+    fontSize: 14,
+    color: '#6B7280',
+    fontWeight: '500',
+    marginBottom: 20,
+  },
+  reasonList: {
+    maxHeight: 260,
+    marginBottom: 16,
+  },
+  reasonItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    marginBottom: 8,
+    backgroundColor: '#FFF',
+  },
+  reasonItemSelected: {
+    borderColor: '#EA580C',
+    backgroundColor: '#FFF7ED',
+  },
+  reasonRadio: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 2,
+    borderColor: '#D1D5DB',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  reasonRadioSelected: {
+    borderColor: '#EA580C',
+  },
+  reasonRadioDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#EA580C',
+  },
+  reasonText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#374151',
+    flex: 1,
+  },
+  reasonTextSelected: {
+    color: '#EA580C',
+  },
+  call911Button: {
+    flexDirection: 'row',
+    backgroundColor: '#DC2626',
+    paddingVertical: 16,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 10,
+    shadowColor: '#DC2626',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  call911Text: {
+    color: '#FFF',
+    fontSize: 17,
+    fontWeight: '800',
+  },
+  modalSubmitButton: {
+    backgroundColor: '#111827',
+    paddingVertical: 16,
+    borderRadius: 14,
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  modalSubmitDisabled: {
+    backgroundColor: '#E5E7EB',
+  },
+  modalSubmitText: {
+    color: '#FFF',
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  modalSubmitTextDisabled: {
+    color: '#9CA3AF',
+  },
+  modalCancelButton: {
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  modalCancelText: {
     color: '#6B7280',
     fontSize: 15,
     fontWeight: '700',

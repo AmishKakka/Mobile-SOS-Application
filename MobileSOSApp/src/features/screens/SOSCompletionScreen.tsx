@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -7,8 +7,10 @@ import {
   TouchableOpacity,
   Animated,
   Platform,
+  Alert,
+  ScrollView,
 } from 'react-native';
-import { CheckCircle, AlertTriangle, Clock, MapPin, User, FileText } from 'lucide-react-native';
+import { CheckCircle, AlertTriangle, Clock, MapPin, User, FileText, Video, Upload } from 'lucide-react-native';
 
 import type { ParamListBase } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -19,7 +21,7 @@ type CompletionParams = {
   responseTime: string;
   distanceCovered: string;
   outcome: 'helped' | 'cannot_handle';
-  notes: string;
+  reason?: string;
 };
 
 type Props = {
@@ -33,10 +35,11 @@ export default function SOSCompletionScreen({ navigation, route }: Props) {
     responseTime = '4:32',
     distanceCovered = '0.8 km',
     outcome = 'helped',
-    notes = '',
+    reason = '',
   } = route.params ?? {};
 
   const isHelped = outcome === 'helped';
+  const [videoSkipped, setVideoSkipped] = useState(false);
 
   const scaleAnim = useRef(new Animated.Value(0)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -68,9 +71,17 @@ export default function SOSCompletionScreen({ navigation, route }: Props) {
     });
   };
 
+  const handleRecordVideo = () => {
+    Alert.alert(
+      'Coming Soon',
+      'Video recording will be available in a future update.',
+      [{ text: 'OK' }],
+    );
+  };
+
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.content}>
+      <ScrollView contentContainerStyle={styles.scrollContent} bounces={false}>
         <Animated.View style={[styles.iconContainer, { transform: [{ scale: scaleAnim }] }]}>
           <View style={[styles.iconCircle, !isHelped && styles.iconCircleAmber]}>
             {isHelped ? (
@@ -127,7 +138,7 @@ export default function SOSCompletionScreen({ navigation, route }: Props) {
             </View>
           </View>
 
-          {notes.trim().length > 0 && (
+          {!isHelped && reason.trim().length > 0 && (
             <>
               <View style={styles.divider} />
               <View style={styles.statRow}>
@@ -135,13 +146,44 @@ export default function SOSCompletionScreen({ navigation, route }: Props) {
                   <FileText color="#6B7280" size={18} />
                 </View>
                 <View style={styles.statContent}>
-                  <Text style={styles.statLabel}>Notes</Text>
-                  <Text style={styles.statValue}>{notes}</Text>
+                  <Text style={styles.statLabel}>Reason</Text>
+                  <Text style={styles.statValue}>{reason}</Text>
                 </View>
               </View>
             </>
           )}
         </Animated.View>
+
+        {isHelped && !videoSkipped && (
+          <Animated.View style={[styles.videoCard, { opacity: fadeAnim }]}>
+            <View style={styles.videoHeader}>
+              <Video color="#2563EB" size={22} />
+              <Text style={styles.videoTitle}>Confirmation Video</Text>
+            </View>
+            <Text style={styles.videoDesc}>
+              Please submit a short video confirming you have helped the person in need.
+            </Text>
+
+            <TouchableOpacity style={styles.videoDropzone} activeOpacity={0.7} onPress={handleRecordVideo}>
+              <Upload color="#9CA3AF" size={32} />
+              <Text style={styles.dropzoneText}>Tap to record video</Text>
+              <Text style={styles.dropzoneHint}>A short clip is sufficient</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.recordButton} activeOpacity={0.8} onPress={handleRecordVideo}>
+              <Video color="#FFF" size={20} />
+              <Text style={styles.recordButtonText}>Record Video</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.skipButton}
+              activeOpacity={0.8}
+              onPress={() => setVideoSkipped(true)}
+            >
+              <Text style={styles.skipButtonText}>Skip for now</Text>
+            </TouchableOpacity>
+          </Animated.View>
+        )}
 
         <Animated.View
           style={[
@@ -156,7 +198,7 @@ export default function SOSCompletionScreen({ navigation, route }: Props) {
               : 'The emergency has been flagged for additional responders. Thank you for trying.'}
           </Text>
         </Animated.View>
-      </View>
+      </ScrollView>
 
       <View style={styles.bottomContainer}>
         <TouchableOpacity style={styles.doneButton} activeOpacity={0.8} onPress={handleDone}>
@@ -172,11 +214,11 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#FFF',
   },
-  content: {
-    flex: 1,
+  scrollContent: {
     alignItems: 'center',
     paddingHorizontal: 24,
     paddingTop: Platform.OS === 'android' ? 60 : 40,
+    paddingBottom: 24,
   },
 
   iconContainer: {
@@ -267,6 +309,89 @@ const styles = StyleSheet.create({
     height: 1,
     backgroundColor: '#F3F4F6',
     marginVertical: 4,
+  },
+
+  videoCard: {
+    width: '100%',
+    backgroundColor: '#FFF',
+    borderRadius: 16,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: '#DBEAFE',
+    marginBottom: 16,
+    shadowColor: '#2563EB',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  videoHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+  },
+  videoTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#111827',
+  },
+  videoDesc: {
+    fontSize: 14,
+    color: '#6B7280',
+    lineHeight: 20,
+    marginBottom: 16,
+  },
+  videoDropzone: {
+    borderWidth: 2,
+    borderColor: '#D1D5DB',
+    borderStyle: 'dashed',
+    borderRadius: 16,
+    paddingVertical: 32,
+    alignItems: 'center',
+    backgroundColor: '#F9FAFB',
+    marginBottom: 14,
+    gap: 6,
+  },
+  dropzoneText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#6B7280',
+    marginTop: 4,
+  },
+  dropzoneHint: {
+    fontSize: 12,
+    color: '#9CA3AF',
+    fontWeight: '500',
+  },
+  recordButton: {
+    flexDirection: 'row',
+    backgroundColor: '#2563EB',
+    paddingVertical: 14,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+    shadowColor: '#2563EB',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  recordButtonText: {
+    color: '#FFF',
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  skipButton: {
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  skipButtonText: {
+    color: '#9CA3AF',
+    fontSize: 14,
+    fontWeight: '600',
   },
 
   impactCard: {

@@ -1,16 +1,101 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity, Switch } from 'react-native';
-import { Shield, Siren, Users, MapPin, Handshake } from 'lucide-react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  SafeAreaView,
+  ScrollView,
+  TouchableOpacity,
+  Switch,
+  Animated,
+  Vibration,
+  Platform,
+} from 'react-native';
+import { Shield, Siren, Users, MapPin, Handshake, AlertTriangle, ChevronRight } from 'lucide-react-native';
 
 type NavigationLike = { navigate: (screen: string, params?: Record<string, any>) => void };
 
 type HelperDashboardScreenProps = { navigation: NavigationLike };
 
+const MOCK_VICTIM = {
+  victimName: 'Sarah M.',
+  victimLocation: { latitude: 33.4152, longitude: -111.9263 },
+  distance: '0.8 km',
+  incidentType: 'Medical Emergency',
+};
+
 const HelperDashboardScreen: React.FC<HelperDashboardScreenProps> = ({ navigation }) => {
   const [isAvailable, setIsAvailable] = useState(true);
+  const [showBanner, setShowBanner] = useState(false);
+  const bannerAnim = useRef(new Animated.Value(-140)).current;
+  const bannerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const dismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (isAvailable && !showBanner) {
+      bannerTimerRef.current = setTimeout(() => {
+        setShowBanner(true);
+        Vibration.vibrate(400);
+        Animated.spring(bannerAnim, {
+          toValue: 0,
+          tension: 60,
+          friction: 10,
+          useNativeDriver: true,
+        }).start();
+
+        dismissTimerRef.current = setTimeout(() => {
+          dismissBanner();
+        }, 15000);
+      }, 5000);
+    }
+
+    return () => {
+      if (bannerTimerRef.current) clearTimeout(bannerTimerRef.current);
+      if (dismissTimerRef.current) clearTimeout(dismissTimerRef.current);
+    };
+  }, [isAvailable]);
+
+  const dismissBanner = () => {
+    Animated.timing(bannerAnim, {
+      toValue: -140,
+      duration: 250,
+      useNativeDriver: true,
+    }).start(() => setShowBanner(false));
+  };
+
+  const handleBannerTap = () => {
+    if (dismissTimerRef.current) clearTimeout(dismissTimerRef.current);
+    dismissBanner();
+    setTimeout(() => {
+      navigation.navigate('HelperSOSNotification', MOCK_VICTIM);
+    }, 260);
+  };
 
   return (
     <SafeAreaView style={styles.container}>
+      {/* Notification Banner */}
+      {showBanner && (
+        <Animated.View style={[styles.notifBanner, { transform: [{ translateY: bannerAnim }] }]}>
+          <TouchableOpacity
+            style={styles.notifTouchable}
+            activeOpacity={0.85}
+            onPress={handleBannerTap}
+          >
+            <View style={styles.notifIconCircle}>
+              <AlertTriangle color="#FFF" size={20} />
+            </View>
+            <View style={styles.notifTextCol}>
+              <Text style={styles.notifTitle}>Emergency SOS nearby!</Text>
+              <Text style={styles.notifSub}>
+                {MOCK_VICTIM.victimName} - {MOCK_VICTIM.distance} away
+              </Text>
+              <Text style={styles.notifCta}>Tap to respond</Text>
+            </View>
+            <ChevronRight color="#FCA5A5" size={20} />
+          </TouchableOpacity>
+        </Animated.View>
+      )}
+
       <ScrollView contentContainerStyle={styles.scroll}>
         
         <View style={styles.header}>
@@ -138,7 +223,56 @@ const InfoCard: React.FC<InfoCardProps> = ({ icon, title, desc, bg, onPress }) =
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#ffffff' },
-  scroll: { padding: 24 },
+  scroll: { padding: 24, paddingTop: 16 },
+
+  notifBanner: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 54 : 10,
+    left: 12,
+    right: 12,
+    zIndex: 100,
+    backgroundColor: '#7F1D1D',
+    borderRadius: 16,
+    shadowColor: '#DC2626',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35,
+    shadowRadius: 14,
+    elevation: 12,
+  },
+  notifTouchable: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    gap: 12,
+  },
+  notifIconCircle: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: '#DC2626',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  notifTextCol: {
+    flex: 1,
+  },
+  notifTitle: {
+    color: '#FFF',
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  notifSub: {
+    color: '#FCA5A5',
+    fontSize: 13,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  notifCta: {
+    color: '#FCA5A5',
+    fontSize: 12,
+    fontWeight: '500',
+    marginTop: 4,
+  },
   header: { alignItems: 'center', marginBottom: 32, marginTop: 10 },
   iconCircle: { width: 64, height: 64, borderRadius: 18, backgroundColor: '#d32f2f', justifyContent: 'center', alignItems: 'center', marginBottom: 16 },
   title: { fontSize: 28, fontWeight: 'bold', color: '#111827', marginBottom: 6 },
