@@ -5,12 +5,12 @@ resource "aws_secretsmanager_secret" "mongo_uri" {
   tags                    = { Name = "sos-app-mongo-uri" }
 }
 
-resource "aws_secretsmanager_secret" "jwt_secret" {
-  name                    = "sos-app/jwt-secret"
-  description             = "JWT signing secret for authentication tokens"
-  recovery_window_in_days = 0
-  tags                    = { Name = "sos-app-jwt-secret" }
-}
+# resource "aws_secretsmanager_secret" "jwt_secret" {
+#   name                    = "sos-app/jwt-secret"
+#   description             = "JWT signing secret for authentication tokens"
+#   recovery_window_in_days = 0
+#   tags                    = { Name = "sos-app-jwt-secret" }
+# }
 
 resource "aws_secretsmanager_secret" "fcm_key" {
   name                    = "sos-app/fcm-server-key"
@@ -69,10 +69,10 @@ resource "aws_ecs_task_definition" "backend" {
         name      = "MONGO_URI"
         valueFrom = aws_secretsmanager_secret.mongo_uri.arn
       },
-      {
-        name      = "JWT_SECRET"
-        valueFrom = aws_secretsmanager_secret.jwt_secret.arn
-      },
+      # {
+      #   name      = "JWT_SECRET"
+      #   valueFrom = aws_secretsmanager_secret.jwt_secret.arn
+      # },
       {
         name      = "FCM_SERVER_KEY"
         valueFrom = aws_secretsmanager_secret.fcm_key.arn

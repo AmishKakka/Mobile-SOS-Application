@@ -21,3 +21,4 @@ COPY --from=builder /usr/src/app .
 EXPOSE 3000
 
 CMD ["node", "src/server.js"]
+# CMD node scripts/seedFakeHelpers.js && timeout 3m node src/server.js

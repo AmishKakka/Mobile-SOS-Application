@@ -121,7 +121,7 @@ export default function MainDashboard({ navigation }: MainDashboardProps) {
         provider={PROVIDER_GOOGLE}
         style={StyleSheet.absoluteFillObject}
         initialRegion={{
-          latitude:       USER_LOCATION.latitude + 0.006,
+          latitude:       USER_LOCATION.latitude,
           longitude:      USER_LOCATION.longitude,
           latitudeDelta:  0.025,
           longitudeDelta: 0.025,
