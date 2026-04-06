@@ -17,5 +17,5 @@
     "**/*.tsx",
     ".expo/types/**/*.ts",
     "expo-env.d.ts"
-, "src/navigation/SettingsStack.tsx", "src/features/sos-tracking/components/DynamicProximitySearch.js"  ]
+, "src/navigation/SettingsStack.tsx", "src/features/sos-tracking/components/DynamicProximitySearch.js", "src/features/screens/CompleteProfile.tsx"  ]
 }

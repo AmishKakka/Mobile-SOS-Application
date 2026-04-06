@@ -50,7 +50,13 @@ export default function AuthScreen({ navigation }: AuthScreenProps) {
         setMessage(isRegister ? "Registration successful!" : "Sign in successful!");
 
         setTimeout(() => {
-            navigation.replace("MainDashboard");
+            if (isRegister) {
+                // Route new users to the setup wizard
+                navigation.replace("CompleteProfile");
+            } else {
+                // Route returning users straight to the dashboard
+                navigation.replace("MainDashboard");
+            }
         }, 1000);
     }
 

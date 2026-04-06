@@ -32,8 +32,8 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
           </View>
         </View>
 
-        <Text style={styles.sectionTitle}>PREFERENCES</Text>
-        <View style={styles.cardGroup}>
+        {/* <Text style={styles.sectionTitle}>PREFERENCES</Text> */}
+        {/* <View style={styles.cardGroup}>
           <View style={styles.toggleRow}>
             <View style={styles.iconAndText}>
               <View style={[styles.iconBox, { backgroundColor: '#EFF6FF' }]}>
@@ -52,7 +52,7 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
             />
           </View>
           <View style={styles.divider} />
-        </View>
+        </View> */}
 
         {/* ACCOUNT SECTION */}
         <Text style={styles.sectionTitle}>ACCOUNT & DATA</Text>
@@ -79,6 +79,12 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
             <ChevronRight color="#D1D5DB" size={20} />
           </TouchableOpacity>
         </View>
+
+        {/* DELETE ACCOUNT BUTTON */}
+        <TouchableOpacity style={styles.logoutBtn}>
+          <LogOut color="#DC2626" size={18} style={{ marginRight: 8 }} />
+          <Text style={styles.logoutText}>Delete Account</Text>
+        </TouchableOpacity>
 
         {/* LOGOUT BUTTON */}
         <TouchableOpacity style={styles.logoutBtn}>
