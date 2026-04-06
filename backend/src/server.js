@@ -22,8 +22,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://nisarg2107:SafeGuard2026@cluster1.tdiusuq.mongodb.net/?appName=Cluster1';
-
+const MONGO_URI = process.env.MONGO_URI
 mongoose.connect(MONGO_URI)
   .then(() => console.log('✅ Connected to MongoDB Atlas'))
   .catch(err => console.error('🔥 MongoDB Connection Error:', err));
