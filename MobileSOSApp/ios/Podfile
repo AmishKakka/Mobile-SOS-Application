@@ -17,6 +17,9 @@ end
 target 'MobileSOSApp' do
   config = use_native_modules!
 
+  # Google Maps on iOS (required for PROVIDER_GOOGLE). Set GMSApiKey in Info.plist.
+  pod 'react-native-maps/Google', :path => '../node_modules/react-native-maps'
+
   use_react_native!(
     :path => config[:reactNativePath],
     # An absolute path to your application root.

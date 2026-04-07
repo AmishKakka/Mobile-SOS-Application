@@ -9,7 +9,7 @@ import {
   Dimensions,
   Platform,
 } from 'react-native';
-import MapView, { Marker } from 'react-native-maps';
+import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import { AlertTriangle, MapPin, User, X, Check } from 'lucide-react-native';
 
 import type { ParamListBase } from '@react-navigation/native';
@@ -108,6 +108,7 @@ export default function HelperSOSNotificationScreen({ navigation, route }: Props
       {/* Map preview */}
       <Animated.View style={[styles.mapContainer, { opacity: fadeAnim }]}>
         <MapView
+          provider={PROVIDER_GOOGLE}
           style={styles.map}
           initialRegion={{
             ...victimLocation,

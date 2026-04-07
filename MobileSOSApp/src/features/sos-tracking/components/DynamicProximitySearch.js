@@ -1,7 +1,7 @@
 import { Delete, Shield } from "lucide-react-native";
 import React, { useEffect, useRef, useState } from 'react';
 import { Alert, Dimensions, Linking, SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import MapView, { Circle, Marker } from 'react-native-maps';
+import MapView, { Circle, Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 
 const { width } = Dimensions.get('window');
 
@@ -131,6 +131,7 @@ export default function DynamicProximitySearch({ navigation, route }) {
         <View style={styles.container}>
             <MapView
                 ref={mapRef}
+                provider={PROVIDER_GOOGLE}
                 style={styles.map}
                 initialRegion={{
                     ...userLocation,

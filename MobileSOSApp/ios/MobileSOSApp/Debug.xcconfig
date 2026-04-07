@@ -1,0 +1,4 @@
+// App target: includes CocoaPods settings, then optional local secrets (gitignored).
+#include "../Pods/Target Support Files/Pods-MobileSOSApp/Pods-MobileSOSApp.debug.xcconfig"
+GOOGLE_MAPS_API_KEY =
+#include? "Secrets.xcconfig"

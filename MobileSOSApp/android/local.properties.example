@@ -1,0 +1,14 @@
+# Copy this file to android/local.properties (that file is gitignored).
+# Android Studio usually creates local.properties with sdk.dir automatically.
+# Example:
+#   sdk.dir=/Users/you/Library/Android/sdk
+#
+# Gradle reads MAPS_API_KEY for the Google Maps SDK meta-data in AndroidManifest.
+#
+# 1. Enable "Maps SDK for Android" for this key in Google Cloud Console.
+# 2. Restrict the key to your app package com.mobilesosapp (release) as appropriate.
+#
+# iOS uses the same pattern: copy ios/MobileSOSApp/Secrets.xcconfig.example to Secrets.xcconfig
+# and set GOOGLE_MAPS_API_KEY (see README).
+
+MAPS_API_KEY=your_google_maps_sdk_key_here

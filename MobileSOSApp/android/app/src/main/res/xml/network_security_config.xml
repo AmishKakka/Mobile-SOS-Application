@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+  <!-- Allows HTTP (e.g. Socket.IO) in release builds to local/dev hosts.
+       Debug builds already set usesCleartextTraffic via the React Native Gradle plugin.
+       If you change BACKEND_URL in src/services/socketService.ts, add that host here too. -->
+  <domain-config cleartextTrafficPermitted="true">
+    <domain includeSubdomains="true">localhost</domain>
+    <domain includeSubdomains="true">127.0.0.1</domain>
+    <domain includeSubdomains="true">10.0.2.2</domain>
+    <domain includeSubdomains="true">192.168.0.197</domain>
+  </domain-config>
+</network-security-config>

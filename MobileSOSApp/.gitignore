@@ -23,6 +23,7 @@ DerivedData
 *.ipa
 *.xcuserstate
 **/.xcode.env.local
+ios/MobileSOSApp/Secrets.xcconfig
 
 # Android/IntelliJ
 #

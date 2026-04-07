@@ -12,7 +12,7 @@ import {
   Linking,
   ScrollView,
 } from 'react-native';
-import MapView, { Marker, Polyline } from 'react-native-maps';
+import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import { Navigation, MapPin, Clock, CheckCircle, AlertTriangle, X, Phone, Car, PersonStanding } from 'lucide-react-native';
 
 import type { ParamListBase } from '@react-navigation/native';
@@ -229,6 +229,7 @@ export default function HelperTrackingScreen({ navigation, route: navRoute }: Pr
     <View style={styles.container}>
       <MapView
         ref={mapRef}
+        provider={PROVIDER_GOOGLE}
         style={styles.map}
         initialRegion={{
           latitude: (HELPER_START.latitude + victimLocation.latitude) / 2,

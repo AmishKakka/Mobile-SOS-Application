@@ -62,6 +62,13 @@ If everything is set up correctly, you should see your new app running in the An
 
 This is one way to run your app — you can also build it directly from Android Studio or Xcode.
 
+## Maps API keys and HTTP backend (Android vs iOS)
+
+- **Android (Google Maps tiles):** Copy [`android/local.properties.example`](android/local.properties.example) to `android/local.properties` and set `MAPS_API_KEY`. In Google Cloud, enable **Maps SDK for Android** and restrict the key to package `com.mobilesosapp` when you ship.
+- **iOS (Google Maps with `PROVIDER_GOOGLE`):** Same idea as Android’s `local.properties`. Copy [`ios/MobileSOSApp/Secrets.xcconfig.example`](ios/MobileSOSApp/Secrets.xcconfig.example) to **`ios/MobileSOSApp/Secrets.xcconfig`** (gitignored) and set **`GOOGLE_MAPS_API_KEY`**. [`Info.plist`](ios/MobileSOSApp/Info.plist) reads it via **`$(GOOGLE_MAPS_API_KEY)`** into **`GMSApiKey`**; [`Debug.xcconfig`](ios/MobileSOSApp/Debug.xcconfig) / [`Release.xcconfig`](ios/MobileSOSApp/Release.xcconfig) chain in CocoaPods + secrets. Enable **Maps SDK for iOS** in Google Cloud. Uses the `react-native-maps/Google` subspec ([`ios/Podfile`](ios/Podfile), [`react-native.config.js`](react-native.config.js)).
+- **HTTP Socket.IO:** `src/services/socketService.ts` points at your backend. Release Android builds use [`android/app/src/main/res/xml/network_security_config.xml`](android/app/src/main/res/xml/network_security_config.xml) so cleartext HTTP is allowed for listed dev hosts (including the LAN IP used there). If you change `BACKEND_URL`, update that XML or prefer HTTPS in production.
+- **Debug Logcat (Android):** With a device or emulator connected, run `chmod +x scripts/android-maps-socket-logcat.sh && ./scripts/android-maps-socket-logcat.sh` to watch Maps, cleartext, and socket-related lines.
+
 ## Step 3: Modify your app
 
 Now that you have successfully run the app, let's make changes!
