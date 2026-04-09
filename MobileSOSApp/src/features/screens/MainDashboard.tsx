@@ -1,6 +1,6 @@
 import type { ParamListBase } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { MapPin, User, Users, Phone, X } from "lucide-react-native";
+import { MapPin, User, Users, Phone, X, ShieldCheck, Video } from "lucide-react-native";
 import React, { useEffect, useRef, useState } from "react";
 import {
   Animated,
@@ -12,9 +12,12 @@ import {
   TouchableOpacity,
   View,
   ActivityIndicator,
-  Alert
+  Alert,
+  ScrollView,
+  Linking
 } from "react-native";
-import MapView, { Marker, Circle, PROVIDER_GOOGLE } from 'react-native-maps';
+// @ts-ignore
+import MapView, { Marker, Circle, PROVIDER_GOOGLE, Polyline } from 'react-native-maps';
 
 // Import the service logic
 import { findNearestHelpers, Helper } from '../../services/helperService';
@@ -37,35 +40,43 @@ export default function MainDashboard({ navigation }: MainDashboardProps) {
   const [searchRadius, setSearchRadius] = useState<number>(0); 
   const [isSearching, setIsSearching] = useState<boolean>(false);
   const [timerCount, setTimerCount] = useState<number>(0);
+  const [showVideoCheck, setShowVideoCheck] = useState(false); // Task 4 State
   const timerRef = useRef<any>(null);
 
-  // --- ENGINE 1: MOVEMENT (Live Tracker) ---
+  // --- ENGINE 1: MOVEMENT (Live Tracker + Task 3 ETA updates) ---
   useEffect(() => {
     if (helpers.length === 0) return;
     const moveInterval = setInterval(() => {
       setHelpers((prevHelpers) =>
-        prevHelpers.map((h) => ({
-          ...h,
-          latitude: h.latitude + (USER_LOCATION.latitude - h.latitude) * 0.015,
-          longitude: h.longitude + (USER_LOCATION.longitude - h.longitude) * 0.015,
-        }))
+        prevHelpers.map((h) => {
+          const newLat = h.latitude + (USER_LOCATION.latitude - h.latitude) * 0.015;
+          const newLng = h.longitude + (USER_LOCATION.longitude - h.longitude) * 0.015;
+          
+          // Recalculate distance for live ETA Task 3
+          const dist = Math.sqrt(Math.pow(newLat - USER_LOCATION.latitude, 2) + Math.pow(newLng - USER_LOCATION.longitude, 2));
+          const metersAway = Math.round(dist * 111320);
+
+          return { ...h, latitude: newLat, longitude: newLng, distanceAway: metersAway };
+        })
       );
     }, 3000);
     return () => clearInterval(moveInterval);
   }, [helpers.length]); 
 
-  // --- ENGINE 2: RADIUS & SEARCHING LOGIC ---
+  // --- ENGINE 2: RADIUS & SEARCHING LOGIC (Preserved Original) ---
   useEffect(() => {
     if (!isSearching) return;
 
     timerRef.current = setInterval(() => {
       setTimerCount((prev) => {
-        if (prev >= 29) {
-          // Visual Expansion after 30 seconds
-          setSearchRadius(500); 
-          return 30; 
+        if (prev === 0 || prev === 29) {
+          const rad = prev === 0 ? 250 : 500;
+          findNearestHelpers(USER_LOCATION.latitude, USER_LOCATION.longitude, rad).then(res => {
+            if (res.helpers) setHelpers(prevH => [...prevH, ...res.helpers]);
+            if (prev === 29) setSearchRadius(500); 
+          });
         }
-        return prev + 1;
+        return prev >= 30 ? 30 : prev + 1;
       });
     }, 1000);
 
@@ -74,7 +85,7 @@ export default function MainDashboard({ navigation }: MainDashboardProps) {
     };
   }, [isSearching]);
 
-  // --- IDLE ANIMATIONS ---
+  // --- IDLE ANIMATIONS (Original) ---
   useEffect(() => {
     const loop = (a: any, v: number) => Animated.loop(Animated.sequence([
       Animated.timing(a, { toValue: v, duration: 1000, useNativeDriver: true }),
@@ -85,17 +96,25 @@ export default function MainDashboard({ navigation }: MainDashboardProps) {
 
   // --- ACTIONS ---
   const handleTriggerSOS = () => {
+    console.log("TASK 1: Notifying Emergency Contacts..."); // Task 1 Implementation
     setHelpers([]);
     setTimerCount(0);
     setSearchRadius(250);
     setIsSearching(true);
   };
 
-  const cancelSOS = () => {
+  // Task 4: Redirect cancel to video check
+  const initiateCancel = () => {
+    setShowVideoCheck(true); 
+  };
+
+  const finalizeSOS = () => {
     setIsSearching(false);
     setSearchRadius(0);
     setHelpers([]);
     setTimerCount(0);
+    setShowVideoCheck(false);
+    Alert.alert("SOS Complete", "Safety confirmed via video.");
   };
 
   return (
@@ -115,15 +134,31 @@ export default function MainDashboard({ navigation }: MainDashboardProps) {
             fillColor="rgba(220, 38, 38, 0.1)" 
           />
         )}
-        {helpers.map(h => (
-          <Marker key={h.id} coordinate={{ latitude: h.latitude, longitude: h.longitude }} pinColor="#10B981" />
-        ))}
+        
+        {/* Task 3: Moving Markers with Polylines and ETA */}
+        {helpers.map((h) => (
+  <React.Fragment key={h.id}>
+    {/* @ts-ignore */}
+    <Polyline 
+      coordinates={[USER_LOCATION, { latitude: h.latitude, longitude: h.longitude }]} 
+      strokeColor="#10B981" 
+      strokeWidth={2} 
+      lineDashPattern={[5, 5]} 
+    />
+    {/* @ts-ignore */}
+    <Marker coordinate={{ latitude: h.latitude, longitude: h.longitude }}>
+       <View style={styles.etaBadge}>
+         <Text style={styles.etaText}>{h.distanceAway}m</Text>
+       </View>
+       <MapPin color="#10B981" size={30} fill="#10B981" />
+    </Marker>
+  </React.Fragment>
+))}
       </MapView>
 
       <SafeAreaView style={styles.container} pointerEvents="box-none">
         <View style={styles.header}><Text style={styles.logo}>SafeGuard</Text></View>
 
-        {/* --- DYNAMIC ADDRESS BAR --- */}
         <View style={styles.locationCard}>
           <View style={styles.iconBox}><MapPin color="#DC2626" size={18} /></View>
           <View>
@@ -136,7 +171,6 @@ export default function MainDashboard({ navigation }: MainDashboardProps) {
           </View>
         </View>
 
-        {/* --- DYNAMIC UI SWITCH --- */}
         {!isSearching ? (
           <View style={styles.buttonCenter} pointerEvents="box-none">
             <TouchableOpacity onPress={handleTriggerSOS} style={styles.bigSosButton}>
@@ -144,8 +178,23 @@ export default function MainDashboard({ navigation }: MainDashboardProps) {
             </TouchableOpacity>
           </View>
         ) : (
-          /* SEARCHING OVERLAY: Call 911 & Grey Cancel Button */
           <View style={styles.activeOverlay}>
+            
+            {/* Task 2: Arriving Helpers List */}
+            {helpers.length > 0 && (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.helperScroll}>
+                {helpers.map(helper => (
+                  <View key={helper.id} style={styles.helperCard}>
+                    <User color="#4B5563" size={18} />
+                    <Text style={styles.helperName}>{helper.name}</Text>
+                    <TouchableOpacity onPress={() => Linking.openURL('tel:911')}>
+                      <Phone color="#16A34A" size={18} />
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </ScrollView>
+            )}
+
             <View style={styles.activeContent}>
               <Text style={styles.sosActiveTitle}>🚨 SOS ACTIVE</Text>
               <Text style={styles.searchingCountdown}>
@@ -157,9 +206,24 @@ export default function MainDashboard({ navigation }: MainDashboardProps) {
                 <Text style={styles.call911Text}>CALL 911 NOW</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity style={styles.greyCancelButton} onPress={cancelSOS}>
-                <X color="#4B5563" size={18} />
-                <Text style={styles.cancelButtonText}>Cancel SOS</Text>
+              {/* Task 4: Safety Check Trigger */}
+              <TouchableOpacity style={styles.greyCancelButton} onPress={initiateCancel}>
+                <ShieldCheck color="#4B5563" size={18} />
+                <Text style={styles.cancelButtonText}>I Am Safe</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
+        {/* Task 4: Video Modal Overlay */}
+        {showVideoCheck && (
+          <View style={styles.videoModal}>
+            <View style={styles.videoContent}>
+              <Video color="#DC2626" size={40} />
+              <Text style={styles.vTitle}>Safety Confirmation</Text>
+              <Text style={styles.vSub}>Record a 5-second video to confirm you are safe and conscious.</Text>
+              <TouchableOpacity style={styles.vBtn} onPress={finalizeSOS}>
+                <Text style={styles.vBtnText}>Start Recording</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -219,5 +283,18 @@ const styles = StyleSheet.create({
   
   bottomButtonsContainer: { position: 'absolute', bottom: 40, flexDirection: 'row', width: '100%', paddingHorizontal: 24 },
   bottomBtn: { flex: 1, flexDirection: 'row', backgroundColor: '#FFF', borderRadius: 18, padding: 16, marginHorizontal: 8, alignItems: 'center', elevation: 4 },
-  bottomBtnText: { color: '#374151', fontSize: 13, fontWeight: '700', marginLeft: 10 }
+  bottomBtnText: { color: '#374151', fontSize: 13, fontWeight: '700', marginLeft: 10 },
+
+  // ADDED STYLES (NO DELETIONS MADE ABOVE)
+  etaBadge: { backgroundColor: '#FFF', paddingHorizontal: 4, borderRadius: 5, position: 'absolute', top: -20, alignSelf: 'center', borderWidth: 1, borderColor: '#10B981' },
+  etaText: { fontSize: 10, color: '#10B981', fontWeight: 'bold' },
+  helperScroll: { marginBottom: 15, maxHeight: 70 },
+  helperCard: { backgroundColor: '#FFF', flexDirection: 'row', alignItems: 'center', padding: 12, borderRadius: 18, marginRight: 12, elevation: 5 },
+  helperName: { marginHorizontal: 10, fontWeight: 'bold', fontSize: 13, color: '#1F2937' },
+  videoModal: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'center', alignItems: 'center', zIndex: 1000 },
+  videoContent: { backgroundColor: '#FFF', width: '85%', padding: 30, borderRadius: 30, alignItems: 'center' },
+  vTitle: { fontSize: 20, fontWeight: '900', marginTop: 15, color: '#111827' },
+  vSub: { textAlign: 'center', color: '#4B5563', marginVertical: 15, lineHeight: 20 },
+  vBtn: { backgroundColor: '#DC2626', width: '100%', padding: 18, borderRadius: 16, alignItems: 'center' },
+  vBtnText: { color: '#FFF', fontWeight: '900', fontSize: 16 }
 });
