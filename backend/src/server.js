@@ -1,28 +1,40 @@
+require('dotenv').config({ path: '../.env' }); 
+
 const express = require('express');
 const http    = require('http');
 const cors    = require('cors');
 const Redis   = require('ioredis');
 const initializeSocket = require('./sockets/socket');
+const connectDB = require('./config/db'); // 2. Import your DB config
 
-const REQUIRED_ENV = ['REDIS_HOST'];
-const missing = REQUIRED_ENV.filter((key) => !process.env[key]);
-if (missing.length > 0) {
-  console.error(`Missing required environment variables: ${missing.join(', ')}`);
-  process.exit(1);
-}
+const REQUIRED_ENV = ['REDIS_HOST', 'MONGO_URI'];
+// const missing = REQUIRED_ENV.filter((key) => !process.env[key]);
+// if (missing.length > 0) {
+//   console.error(`Missing required environment variables: ${missing.join(', ')}`);
+//   process.exit(1);
+// }                  
 
 const PORT = process.env.PORT || 3000;
 const REDIS_HOST = process.env.REDIS_HOST || '127.0.0.1';
 const REDIS_URL  = `redis://${REDIS_HOST}:6379`;
 
 const app = express();
+
+console.log(process.env.MONGO_URI); // Add this line in your src/server.js to verify it's being loaded correctly. If it prints undefined, double-check your .env file and ensure it's in the correct location (the root of your backend directory) and that you have restarted your server after creating or modifying the .env file.
+
+connectDB(); 
+
 app.use(cors());
 app.use(express.json());
+
+const userRoutes = require('./routes/userRoutes');
+app.use('/api/users', userRoutes);
 
 const server = http.createServer(app);
 
 app.get('/health', (req, res) => res.status(200).json({ status: 'ok' }));
 
+// Redis Setup
 // Three separate clients are required:
 //   - redisClient : general reads/writes
 //   - pubClient   : Socket.IO Redis adapter publisher
@@ -53,7 +65,7 @@ const onRedisReady = () => {
   console.log('All Redis clients connected to ElastiCache.');
   initializeSocket(server, redisClient, pubClient, subClient);
 
-  server.listen(PORT, () => {
+  server.listen(PORT, '0.0.0.0', () => {
     console.log(`SafeGuard server running on port ${PORT}`);
   });
 };

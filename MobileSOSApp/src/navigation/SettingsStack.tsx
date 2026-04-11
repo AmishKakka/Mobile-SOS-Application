@@ -29,7 +29,7 @@ const SettingsStack = () => {
       }}
     >
       <Stack.Screen name="AuthScreen" component={AuthScreen} options={{ headerShown: false }} />
-      <Stack.Screen name="CompleteProfile" component={CompleteProfile} />
+      <Stack.Screen name="CompleteProfile" component={CompleteProfile} options={{ title: 'Complete Profile'}}/>
       <Stack.Screen name="CompleteMedicalProfile" component={CompleteMedicalProfile} options={{ title: 'Medical Profile' }} />
       <Stack.Screen name="MainDashboard" component={MainDashboard} options={{ headerShown: false }} />
 

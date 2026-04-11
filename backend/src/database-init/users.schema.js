@@ -5,7 +5,8 @@ db.createCollection("users", {
       additionalProperties: false,
       required: [
         "_id",
-        "fullName",
+        "firstName",
+        "lastName",
         "email",
         "passwordHash",
         "role",
@@ -101,15 +102,30 @@ db.createCollection("users", {
             }
           }
         },
-        emergencyContactUserIds: {
+        emergencyContacts: {
           bsonType: "array",
           minItems: 0,
           maxItems: 5,
-          uniqueItems: true,
+          description: "Up to 5 emergency contacts from the user's phonebook",
           items: {
-            bsonType: "string"
-          },
-          description: "Up to 5 emergency contact UUIDs"
+            bsonType: "object",
+            required: ["name", "phone"], //Relation is optional
+            additionalProperties: false,
+            properties: {
+              name: {
+                bsonType: "string",
+                description: "Contact's full name"
+              },
+              relation: {
+                bsonType: ["string", "null"],
+                description: "E.g., Mother, Father, Friend"
+              },
+              phone: {
+                bsonType: "string",
+                description: "Contact's phone number"
+              }
+            }
+          }
         },
         helperProfile: {
           bsonType: "object",

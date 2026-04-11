@@ -3,22 +3,27 @@ const h3 = require('h3-js');
 
 const MAX_RINGS = 18;
 const MAX_HELPERS = 5;
-H3_RESOLUTION = 9; // ~0.7 miles per cell at the equator
-let redisClient;
+const H3_RESOLUTION = 9; // 0.7 miles per cell at the equator
+let _redisClient = null;
 
-function getRedisClient() {
-    if (!redisClient) {
-        redisClient = new Redis({
-            maxRetriesPerRequest: 1,
-            retryStrategy: () => null,
-        });
+// function getRedisClient() {
+//     if (!redisClient) {
+//         redisClient = new Redis({
+//             maxRetriesPerRequest: 1,
+//             retryStrategy: () => null,
+//         });
 
-        redisClient.on('error', () => {
-            // Keep runtime logs clean; callers handle user-facing errors.
-        });
-    }
+//         redisClient.on('error', () => {
+//             // Keep runtime logs clean; callers handle user-facing errors.
+//         });
+//     }
 
-    return redisClient;
+//     return redisClient;
+// }
+
+//Called once from socket.js to inject the shared Redis client.//
+function setRedisClient(client) {
+  _redisClient = client;
 }
 
 async function triggerSOS(victimLat, victimLng, rejectIds = []) {
@@ -28,8 +33,11 @@ async function triggerSOS(victimLat, victimLng, rejectIds = []) {
     if (!Array.isArray(rejectIds)) {
         throw new TypeError('rejectIds must be an array.');
     }
+    if (!_redisClient) {
+        throw new Error('Redis client not set. Call setRedisClient() first.');
+    }
 
-    const redis = getRedisClient();
+    const redis = _redisClient;
     const rejectIdsSet = new Set(rejectIds.map(String));
     const victimCell = h3.latLngToCell(victimLat, victimLng, H3_RESOLUTION);
 
@@ -77,6 +85,7 @@ async function triggerSOS(victimLat, victimLng, rejectIds = []) {
 
         helpersDetail.push({
             userId: helpersPool[i],
+            name: locationData.name || `Volunteer ${helpersPool[i].slice(-3)}`,
             distance,
             lat: helperLat,
             long: helperLng,
@@ -104,4 +113,5 @@ function calculateDistance(victimLat, victimLng, lat2, long2) {
 
 module.exports = {
     triggerSOS,
+    setRedisClient 
 };

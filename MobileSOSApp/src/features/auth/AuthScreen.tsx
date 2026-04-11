@@ -21,7 +21,8 @@ type AuthScreenProps = {
 
 export default function AuthScreen({ navigation }: AuthScreenProps) {
     const [mode, setMode] = useState<AuthMode>("signin");
-    const [fullName, setFullName] = useState("");
+    const [firstName, setFirstName] = useState("");
+    const [lastName, setLastName] = useState("");
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
     const [confirmPassword, setConfirmPassword] = useState("");
@@ -32,10 +33,14 @@ export default function AuthScreen({ navigation }: AuthScreenProps) {
     const canSubmit = useMemo(() => {
         if (!email.trim() || !password.trim()) return false;
         if (isRegister) {
-            return fullName.trim().length > 1 && confirmPassword.trim() === password.trim();
-        }
+        // Check if both first and last names have content
+        const hasValidName = firstName.trim().length > 0 && lastName.trim().length > 0;
+        const passwordsMatch = confirmPassword.trim() === password.trim();
+        
+        return hasValidName && passwordsMatch;
+    }
         return true;
-    }, [confirmPassword, email, fullName, isRegister, password]);
+    }, [confirmPassword, email, firstName, lastName, isRegister, password]);
 
     function onSubmit() {
         if (!canSubmit) {
@@ -52,7 +57,7 @@ export default function AuthScreen({ navigation }: AuthScreenProps) {
         setTimeout(() => {
             if (isRegister) {
                 // Route new users to the setup wizard
-                navigation.replace("CompleteProfile");
+                navigation.navigate("CompleteProfile");
             } else {
                 // Route returning users straight to the dashboard
                 navigation.replace("MainDashboard");
@@ -89,7 +94,7 @@ export default function AuthScreen({ navigation }: AuthScreenProps) {
                         </Pressable>
                     </View>
 
-                    {isRegister && (
+                    {/* {isRegister && (
                         <View style={styles.inputGroup}>
                             <Text style={styles.label}>Full Name</Text>
                             <TextInput
@@ -97,6 +102,31 @@ export default function AuthScreen({ navigation }: AuthScreenProps) {
                                 value={fullName}
                                 onChangeText={setFullName}
                                 placeholder="John Doe"
+                            />
+                        </View>
+                        
+                    )} */}
+
+                    {isRegister && (
+                        <View style={styles.inputGroup}>
+                            <Text style={styles.label}>First Name</Text>
+                            <TextInput
+                                style={styles.input}
+                                value={firstName}
+                                onChangeText={setFirstName}
+                                placeholder="John"
+                            />
+                        </View>
+                    )}
+
+                    {isRegister && (
+                        <View style={styles.inputGroup}>
+                            <Text style={styles.label}>Last Name</Text>
+                            <TextInput
+                                style={styles.input}
+                                value={lastName}
+                                onChangeText={setLastName}
+                                placeholder="Doe"
                             />
                         </View>
                     )}
