@@ -1,12 +1,13 @@
-resource "aws_lb" "safeguard_alb" {
+resource "aws_lb" "main" {
   name               = "sos-app-alb"
   internal           = false
   load_balancer_type = "application"
   security_groups    = [var.alb_sg_id]
-  subnets            = [var.public_subnet_a, var.public_subnet_b]
+  subnets            = var.public_subnet_ids
+  tags = { Name = "sos-app-alb" }
 }
 
-resource "aws_lb_target_group" "safeguard_tg" {
+resource "aws_lb_target_group" "backend" {
   name        = "sos-app-tg"
   port        = 3000
   protocol    = "HTTP"
@@ -27,15 +28,16 @@ resource "aws_lb_target_group" "safeguard_tg" {
     cookie_duration = 86400
     enabled         = true
   }
+  tags = { Name = "sos-app-tg" }
 }
 
-resource "aws_lb_listener" "safeguard_listener" {
-  load_balancer_arn = aws_lb.safeguard_alb.arn
+resource "aws_lb_listener" "http" {
+  load_balancer_arn = aws_lb.main.arn
   port              = 80
   protocol          = "HTTP"
 
   default_action {
     type             = "forward"
-    target_group_arn = aws_lb_target_group.safeguard_tg.arn
+    target_group_arn = aws_lb_target_group.backend.arn
   }
 }

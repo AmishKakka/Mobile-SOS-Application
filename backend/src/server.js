@@ -1,40 +1,80 @@
 const express = require('express');
-const http = require('http');
-const Redis = require('ioredis');
-const initializeSocket = require("./sockets/socket");
+const http    = require('http');
+const cors    = require('cors');
+const Redis   = require('ioredis');
+const initializeSocket = require('./sockets/socket');
+
+const REQUIRED_ENV = ['REDIS_HOST'];
+const missing = REQUIRED_ENV.filter((key) => !process.env[key]);
+if (missing.length > 0) {
+  console.error(`Missing required environment variables: ${missing.join(', ')}`);
+  process.exit(1);
+}
+
+const PORT = process.env.PORT || 3000;
+const REDIS_HOST = process.env.REDIS_HOST || '127.0.0.1';
+const REDIS_URL  = `redis://${REDIS_HOST}:6379`;
 
 const app = express();
+app.use(cors());
+app.use(express.json());
+
 const server = http.createServer(app);
-const redisHost = process.env.REDIS_HOST || '127.0.0.1';
-const redisUrl = `redis://${redisHost}:6379`;
 
-// ioredis auto-connects immediately upon creation!
-const redisClient = new Redis(redisUrl);
-const pubClient = redisClient.duplicate();
-const subClient = redisClient.duplicate();
+app.get('/health', (req, res) => res.status(200).json({ status: 'ok' }));
 
-redisClient.on('error', (err) => console.error('❌ Redis Main Client Error:', err));
-pubClient.on('error', (err) => console.error('❌ Redis Pub Client Error:', err));
-subClient.on('error', (err) => console.error('❌ Redis Sub Client Error:', err));
-let readyCount = 0;
-const checkReady = () => {
-    readyCount++;
-    if (readyCount === 3) {
-        console.log("All ioredis clients connected successfully to ElastiCache.");
-        initializeSocket(server, redisClient, pubClient, subClient); 
+// Three separate clients are required:
+//   - redisClient : general reads/writes
+//   - pubClient   : Socket.IO Redis adapter publisher
+//   - subClient   : Socket.IO Redis adapter subscriber
+const redisOpts = {
+  retryStrategy: (times) => {
+    if (times > 10) {
+      console.error('Redis retry limit reached. Giving up.');
+      return null;
     }
+    return Math.min(times * 200, 2000); 
+  },
 };
 
-redisClient.on('ready', checkReady);
-pubClient.on('ready', checkReady);
-subClient.on('ready', checkReady);
+const redisClient = new Redis(REDIS_URL, redisOpts);
+const pubClient   = redisClient.duplicate();
+const subClient   = redisClient.duplicate();
 
-app.get('/health', (req, res) => {
-    res.status(200).send('OK');
-});
+redisClient.on('error', (err) => console.error('Redis main error:', err.message));
+pubClient.on('error',   (err) => console.error('Redis pub error:',  err.message));
+subClient.on('error',   (err) => console.error('Redis sub error:',  err.message));
 
-// Start the server
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-    console.log(`🚀 SafeGuard Server running on port ${PORT}`);
-});
+let readyCount = 0;
+const onRedisReady = () => {
+  readyCount++;
+  if (readyCount < 3) return;
+
+  console.log('All Redis clients connected to ElastiCache.');
+  initializeSocket(server, redisClient, pubClient, subClient);
+
+  server.listen(PORT, () => {
+    console.log(`SafeGuard server running on port ${PORT}`);
+  });
+};
+
+redisClient.on('ready', onRedisReady);
+pubClient.on('ready',   onRedisReady);
+subClient.on('ready',   onRedisReady);
+
+const shutdown = async (signal) => {
+  console.log(`${signal} received — shutting down gracefully...`);
+  server.close(() => console.log('HTTP server closed.'));
+
+  // Close Redis connections cleanly
+  await Promise.allSettled([
+    redisClient.quit(),
+    pubClient.quit(),
+    subClient.quit(),
+  ]);
+  console.log('Redis clients disconnected.');
+  process.exit(0);
+};
+
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT',  () => shutdown('SIGINT'));

@@ -17,10 +17,11 @@
     "react": "19.2.3",
     "react-native": "0.84.1",
     "react-native-gesture-handler": "^2.30.0",
-    "react-native-maps": "1.20.1",
+    "react-native-maps": "^1.27.2",
     "react-native-safe-area-context": "^5.7.0",
     "react-native-screens": "^4.24.0",
-    "react-native-svg": "^15.15.4"
+    "react-native-svg": "^15.15.4",
+    "socket.io-client": "^4.8.3"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",

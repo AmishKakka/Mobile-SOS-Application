@@ -32,7 +32,6 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
           </View>
         </View>
 
-        {/* PREFERENCES SECTION */}
         <Text style={styles.sectionTitle}>PREFERENCES</Text>
         <View style={styles.cardGroup}>
           <View style={styles.toggleRow}>
@@ -52,32 +51,13 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
               thumbColor={isAvailable ? '#dc2626' : '#f3f4f6'}
             />
           </View>
-
           <View style={styles.divider} />
-
-          <View style={styles.toggleRow}>
-            <View style={styles.iconAndText}>
-              <View style={[styles.iconBox, { backgroundColor: '#F3F4F6' }]}>
-                <BellRing color="#4B5563" size={20} />
-              </View>
-              <View>
-                <Text style={styles.toggleTitle}>Push Notifications</Text>
-                <Text style={styles.toggleSub}>Alerts and updates</Text>
-              </View>
-            </View>
-            <Switch 
-              value={notifications} 
-              onValueChange={setNotifications} 
-              trackColor={{ false: '#e5e7eb', true: '#A7F3D0' }}
-              thumbColor={notifications ? '#10B981' : '#f3f4f6'}
-            />
-          </View>
         </View>
 
         {/* ACCOUNT SECTION */}
         <Text style={styles.sectionTitle}>ACCOUNT & DATA</Text>
         <View style={styles.cardGroup}>
-          <TouchableOpacity style={styles.menuItem}>
+          <TouchableOpacity style={styles.menuItem} onPress={() => navigation.navigate('MedicalProfile')}>
             <View style={styles.iconAndText}>
               <View style={[styles.iconBox, { backgroundColor: '#FEE2E2' }]}>
                 <HeartPulse color="#DC2626" size={20} />
@@ -89,10 +69,7 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
 
           <View style={styles.divider} />
 
-          <TouchableOpacity 
-            style={styles.menuItem} 
-            onPress={() => navigation.navigate('HelperDashboard')}
-          >
+          <TouchableOpacity style={styles.menuItem} onPress={() => navigation.navigate('HelperDashboard')}>
             <View style={styles.iconAndText}>
               <View style={[styles.iconBox, { backgroundColor: '#ECFDF5' }]}>
                 <UserCircle color="#10B981" size={20} />

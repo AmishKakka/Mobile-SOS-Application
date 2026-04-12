@@ -9,7 +9,11 @@ import AuthScreen from '../features/auth/AuthScreen';
 // --- Other Feature Imports (From the screens folder to maintain modularity) ---
 import EditProfileScreen from '../features/screens/EditProfileScreen';
 import EmergencyContactsScreen from '../features/screens/EmergencyContactsScreen';
+import MedicalProfileScreen from '../features/screens/MedicalProfileScreen';
 import HelperDashboardScreen from '../features/screens/HelperDashBoard';
+import HelperSOSNotificationScreen from '../features/screens/HelperSOSNotificationScreen';
+import HelperTrackingScreen from '../features/screens/HelperTrackingScreen';
+import SOSCompletionScreen from '../features/screens/SOSCompletionScreen';
 import SettingsScreen from '../features/screens/SettingsScreen';
 import MainDashboard from '../features/screens/MainDashboard';
 import HelperGuidelinesScreen from '../features/screens/HelperGuidelines';
@@ -77,6 +81,26 @@ const SettingsStack = () => {
         name="EmergencyContacts"
         component={EmergencyContactsScreen}
         options={{ title: 'Emergency Contacts' }}
+      />
+      <Stack.Screen
+        name="MedicalProfile"
+        component={MedicalProfileScreen}
+        options={{ title: 'Medical Profile' }}
+      />
+      <Stack.Screen
+        name="HelperSOSNotification"
+        component={HelperSOSNotificationScreen as any}
+        options={{ headerShown: false, gestureEnabled: false }}
+      />
+      <Stack.Screen
+        name="HelperTracking"
+        component={HelperTrackingScreen as any}
+        options={{ headerShown: false, gestureEnabled: false }}
+      />
+      <Stack.Screen
+        name="SOSCompletion"
+        component={SOSCompletionScreen as any}
+        options={{ headerShown: false }}
       />
     </Stack.Navigator>
   );

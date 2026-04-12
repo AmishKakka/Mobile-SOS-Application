@@ -1,6 +1,6 @@
 resource "aws_security_group" "alb_sg" {
   name        = "sos-app-alb-sg"
-  description = "ALB accepts requests from internet"
+  description = "ALB accepts HTTP and HTTPS from internet"
   vpc_id      = var.vpc_id
 
   ingress {
@@ -21,6 +21,7 @@ resource "aws_security_group" "alb_sg" {
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
+  tags = { Name = "sos-app-alb-sg" }
 }
 
 resource "aws_security_group" "ecs_sg" {
@@ -40,11 +41,12 @@ resource "aws_security_group" "ecs_sg" {
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
+  tags = { Name = "sos-app-ecs-sg" }
 }
 
 resource "aws_security_group" "redis_sg" {
   name        = "sos-app-redis-sg"
-  description = "ElastiCache Redis only ECS can connect"
+  description = "ElastiCache Redis only ECS tasks can connect"
   vpc_id      = var.vpc_id
 
   ingress {
@@ -59,4 +61,5 @@ resource "aws_security_group" "redis_sg" {
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
+  tags = { Name = "sos-app-redis-sg" }
 }
