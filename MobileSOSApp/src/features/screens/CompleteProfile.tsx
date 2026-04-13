@@ -1,5 +1,7 @@
 import type { ParamListBase } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { API_BASE_URL } from '../../config/config';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { useState } from 'react';
 import {
     KeyboardAvoidingView,
@@ -27,9 +29,40 @@ export default function CompleteProfile({ navigation }: CompleteProfileProps) {
         weight: ''
     });
 
-    const handleNext = () => {
-        // Optional: Save this initial data to your state management or backend here
-        navigation.navigate('CompleteMedicalProfile');
+    const handleNext = async () => {
+        try {
+            // RETRIEVE THE TOKEN FROM THE PHONE
+            const token = await AsyncStorage.getItem('userToken');
+
+            if (!token) {
+                console.error("No token found. User might not be logged in.");
+                return;
+            }
+
+            // SEND THE SECURE UPDATE REQUEST
+            const response = await fetch(`${API_BASE_URL}/users/profile`, {
+                method: 'PUT',
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}` // <--- Here is the ID Badge!
+                },
+                body: JSON.stringify({
+                    phone: formData.phone,
+                    address: formData.address,
+                    height: formData.height,
+                    weight: formData.weight
+                }) 
+            });
+
+            if (response.ok) {
+                navigation.navigate('AddEmergencyContacts');
+            } else {
+                const errorData = await response.json();
+                console.error("Profile update failed:", errorData);
+            }
+        } catch (error) {
+            console.error("Network error during profile update:", error);
+        }
     };
 
     const handleChangePhoto = () => {
@@ -103,7 +136,7 @@ export default function CompleteProfile({ navigation }: CompleteProfileProps) {
                     </View>
 
                     <Pressable style={styles.submitButton} onPress={handleNext}>
-                        <Text style={styles.submitButtonText}>Next: Medical Info</Text>
+                        <Text style={styles.submitButtonText}>Next: Emergency Contacts</Text>
                     </Pressable>
                 </ScrollView>
             </KeyboardAvoidingView>

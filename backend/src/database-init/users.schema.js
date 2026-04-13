@@ -19,11 +19,17 @@ db.createCollection("users", {
           bsonType: "string",
           description: "User UUID must be a string and is required"
         },
-        fullName: {
+        firstName: {
           bsonType: "string",
           minLength: 1,
           maxLength: 120,
-          description: "User full name is required"
+          description: "User first name is required"
+        },
+        lastName: {
+          bsonType: "string",
+          minLength: 1,
+          maxLength: 120,
+          description: "User last name is required"
         },
         phone: {
           bsonType: ["string", "null"],

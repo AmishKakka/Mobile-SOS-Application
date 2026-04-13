@@ -1,5 +1,7 @@
 import type { ParamListBase } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { API_BASE_URL } from '../../config/config';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { useState } from 'react';
 import {
     KeyboardAvoidingView,
@@ -25,10 +27,30 @@ export default function CompleteMedicalProfile({ navigation }: CompleteMedicalPr
         conditions: ''
     });
 
-    const handleSave = () => {
-        console.log("Saving complete medical profile...", medicalData);
-        // Execute final backend API save here
-        navigation.replace('MainDashboard');
+    const handleSave = async () => {
+        try {
+            const token = await AsyncStorage.getItem('userToken');
+
+            const response = await fetch(`${API_BASE_URL}/users/profile`, {
+                method: 'PUT',
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}` 
+                },
+                body: JSON.stringify({ 
+                    medical: medicalData 
+                }) 
+            });
+
+            if (response.ok) {
+                // The onboarding flow is fully complete!
+                navigation.replace('MainDashboard');
+            } else {
+                console.error("Medical profile update failed");
+            }
+        } catch (error) {
+            console.error("Network error during medical update:", error);
+        }
     };
 
     return (

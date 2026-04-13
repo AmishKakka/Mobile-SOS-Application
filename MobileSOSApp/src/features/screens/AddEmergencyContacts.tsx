@@ -13,7 +13,7 @@ const EmergencyContactsScreen: React.FC<Props> = ({ navigation }) => {
   const [newContact, setNewContact] = useState({ name: '', phone: '', relation: '' });
   const [isLoading, setIsLoading] = useState(true);
 
-  // 1. FETCH CONTACTS ON LOAD
+  // FETCH CONTACTS ON LOAD
   useEffect(() => {
     const fetchContacts = async () => {
       try {
@@ -63,7 +63,7 @@ const EmergencyContactsScreen: React.FC<Props> = ({ navigation }) => {
     setShowAddForm(false); 
   };
 
-  // SAVE CONTACTS TO MONGODB (Seamless Transition)
+ // SAVE CONTACTS TO MONGODB (Seamless Transition)
   const handleSave = async () => {
     try {
       const token = await AsyncStorage.getItem('userToken');
@@ -78,7 +78,8 @@ const EmergencyContactsScreen: React.FC<Props> = ({ navigation }) => {
       });
 
       if (response.ok) {
-        navigation.navigate('MainDashboard');
+        // INSTANT NAVIGATION: No success pop-up, just move directly to the next screen
+        navigation.navigate('CompleteMedicalProfile');
       } else {
         const err = await response.json();
         Alert.alert("Error", err.message || "Failed to save contacts.");
@@ -159,7 +160,7 @@ const EmergencyContactsScreen: React.FC<Props> = ({ navigation }) => {
         )}
 
         <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
-          <Text style={styles.saveButtonText}>Save Changes</Text>
+          <Text style={styles.saveButtonText}>Next: Medical Info</Text>
         </TouchableOpacity>
 
       </ScrollView>

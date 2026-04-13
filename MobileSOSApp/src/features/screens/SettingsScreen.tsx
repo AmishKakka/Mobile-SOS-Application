@@ -1,14 +1,61 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, Switch, TouchableOpacity, SafeAreaView, Image, ScrollView } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, Switch, TouchableOpacity, SafeAreaView, Image, ScrollView, ActivityIndicator } from 'react-native';
 import { ChevronRight, HeartPulse, ShieldAlert, LogOut, BellRing, UserCircle } from "lucide-react-native";
+import { API_BASE_URL } from '../../config/config';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
-type NavigationLike = { navigate: (screen: string, params?: Record<string, any>) => void };
 
+type NavigationLike = { 
+  navigate: (screen: string, params?: Record<string, any>) => void;
+  replace: (screen: string) => void;
+};
 type SettingsScreenProps = { navigation: NavigationLike };
 
 const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
   const [isAvailable, setIsAvailable] = useState(true);
-  const [notifications, setNotifications] = useState(true);
+  
+  // Dynamic State Variables
+  const [userData, setUserData] = useState({ firstName: '', lastName: '', email: '' });
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Fetch data when the screen loads
+  useEffect(() => {
+    const fetchProfile = async () => {
+      try {
+        const token = await AsyncStorage.getItem('userToken');
+        if (!token) return;
+
+        const response = await fetch(`${API_BASE_URL}/users/profile`, {
+          method: 'GET',
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          // Update the UI with the real database data
+          setUserData({
+            firstName: data.firstName,
+            lastName: data.lastName,
+            email: data.email
+          });
+        }
+      } catch (error) {
+        console.error("Failed to load profile data:", error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchProfile();
+  }, []);
+
+  if (isLoading) {
+    return (
+      <SafeAreaView style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color="#DC2626" />
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -21,8 +68,12 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
             style={styles.profilePic} 
           />
           <View style={styles.headerTextContainer}>
-            <Text style={styles.userName}>Amish Kakka</Text>
-            <Text style={styles.userEmail}>amishkakka@gmail.com</Text>
+            {/* DYNAMIC DATA HERE */}
+            <Text style={styles.userName}>
+              {`${userData.firstName} ${userData.lastName}`}
+            </Text>
+            <Text style={styles.userEmail}>{userData.email}</Text>
+            
             <TouchableOpacity 
               style={styles.editProfileBtn} 
               onPress={() => navigation.navigate('EditProfile')}
@@ -31,28 +82,6 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
             </TouchableOpacity>
           </View>
         </View>
-
-        {/* <Text style={styles.sectionTitle}>PREFERENCES</Text> */}
-        {/* <View style={styles.cardGroup}>
-          <View style={styles.toggleRow}>
-            <View style={styles.iconAndText}>
-              <View style={[styles.iconBox, { backgroundColor: '#EFF6FF' }]}>
-                <ShieldAlert color="#3B82F6" size={20} />
-              </View>
-              <View>
-                <Text style={styles.toggleTitle}>Community Availability</Text>
-                <Text style={styles.toggleSub}>Currently {isAvailable ? 'Available' : 'Do Not Disturb'}</Text>
-              </View>
-            </View>
-            <Switch 
-              value={isAvailable} 
-              onValueChange={setIsAvailable} 
-              trackColor={{ false: '#e5e7eb', true: '#fca5a5' }}
-              thumbColor={isAvailable ? '#dc2626' : '#f3f4f6'}
-            />
-          </View>
-          <View style={styles.divider} />
-        </View> */}
 
         {/* ACCOUNT SECTION */}
         <Text style={styles.sectionTitle}>ACCOUNT & DATA</Text>
@@ -87,17 +116,23 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
         </TouchableOpacity>
 
         {/* LOGOUT BUTTON */}
-        <TouchableOpacity style={styles.logoutBtn}>
+        <TouchableOpacity 
+          style={styles.logoutBtn}
+          onPress={async () => {
+             // Sign out logic: Delete the token and go back to Auth
+             await AsyncStorage.removeItem('userToken');
+             navigation.replace('AuthScreen');
+          }}
+        >
           <LogOut color="#DC2626" size={18} style={{ marginRight: 8 }} />
           <Text style={styles.logoutText}>Sign Out</Text>
         </TouchableOpacity>
-
-        <Text style={styles.versionText}>MobileSOS App v1.0.4</Text>
 
       </ScrollView>
     </SafeAreaView>
   );
 };
+
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F3F4F6' }, // Darker background to make cards pop

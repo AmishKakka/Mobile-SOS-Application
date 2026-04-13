@@ -14,6 +14,7 @@ import HelperGuidelinesScreen from '../features/screens/HelperGuidelines';
 import DynamicProximitySearch from '../features/sos-tracking/components/DynamicProximitySearch';
 import CompleteProfile from '../features/screens/CompleteProfile';
 import CompleteMedicalProfile from '../features/screens/CompleteMedicalProfile';
+import AddEmergencyContacts from '../features/screens/AddEmergencyContacts';
 
 const Stack = createNativeStackNavigator();
 
@@ -30,6 +31,7 @@ const SettingsStack = () => {
     >
       <Stack.Screen name="AuthScreen" component={AuthScreen} options={{ headerShown: false }} />
       <Stack.Screen name="CompleteProfile" component={CompleteProfile} options={{ title: 'Complete Profile'}}/>
+      <Stack.Screen name="AddEmergencyContacts" component={AddEmergencyContacts} options={{ title: 'Add Emergency Contacts'}}/>
       <Stack.Screen name="CompleteMedicalProfile" component={CompleteMedicalProfile} options={{ title: 'Medical Profile' }} />
       <Stack.Screen name="MainDashboard" component={MainDashboard} options={{ headerShown: false }} />
 

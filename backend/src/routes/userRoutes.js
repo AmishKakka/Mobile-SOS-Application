@@ -3,6 +3,9 @@ const router = express.Router();
 const userController = require('../controllers/userController');
 const authMiddleware = require('../middleware/auth');
 
+// POST /api/users/login
+router.post('/login', userController.loginUser);
+
 // Public Route (No token required)
 // POST /api/users/register
 router.post('/register', userController.registerUser);

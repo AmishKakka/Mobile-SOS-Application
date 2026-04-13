@@ -55,6 +55,49 @@ exports.registerUser = async (req, res) => {
 };
 
 
+
+// CREATE: Login an existing user
+exports.loginUser = async (req, res) => {
+    try {
+        const { email, password } = req.body;
+
+        // 1. Check if user exists
+        const user = await User.findOne({ email });
+        if (!user) {
+            return res.status(400).json({ message: "Invalid email or password." });
+        }
+
+        // 2. Compare the provided password with the hashed database password
+        const isMatch = await bcrypt.compare(password, user.passwordHash);
+        if (!isMatch) {
+            return res.status(400).json({ message: "Invalid email or password." });
+        }
+
+        // 3. Generate the exact same JWT token structure as Registration
+        const payload = {
+            user: { id: user._id }
+        };
+
+        jwt.sign(
+            payload,
+            process.env.JWT_SECRET || 'fallback_secret_key',
+            { expiresIn: '30d' },
+            (err, token) => {
+                if (err) throw err;
+                res.status(200).json({ 
+                    message: "Login successful", 
+                    token, 
+                    userId: user._id 
+                });
+            }
+        );
+    } catch (error) {
+        console.error("Login Error:", error.message);
+        res.status(500).json({ error: "Server error during login" });
+    }
+};
+
+
 // READ: Get User Profile (Settings Dashboard)
 
 exports.getUserProfile = async (req, res) => {

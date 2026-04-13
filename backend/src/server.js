@@ -20,8 +20,6 @@ const REDIS_URL  = `redis://${REDIS_HOST}:6379`;
 
 const app = express();
 
-console.log(process.env.MONGO_URI); // Add this line in your src/server.js to verify it's being loaded correctly. If it prints undefined, double-check your .env file and ensure it's in the correct location (the root of your backend directory) and that you have restarted your server after creating or modifying the .env file.
-
 connectDB(); 
 
 app.use(cors());

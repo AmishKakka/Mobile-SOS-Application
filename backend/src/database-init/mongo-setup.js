@@ -1,3 +1,3 @@
-load("/work/users.schema.js");
-load("/work/incidents.schema.js");
-load("/work/indexes.js");
+load("./users.schema.js");
+load("./incidents.schema.js");
+load("./indexes.js");

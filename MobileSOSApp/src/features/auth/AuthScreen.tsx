@@ -1,5 +1,8 @@
 import type { ParamListBase } from '@react-navigation/native';
+import { API_BASE_URL } from '../../config/config';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+// import { Alert } from 'react-native';
 import React, { useMemo, useState } from "react";
 import {
     KeyboardAvoidingView,
@@ -42,27 +45,64 @@ export default function AuthScreen({ navigation }: AuthScreenProps) {
         return true;
     }, [confirmPassword, email, firstName, lastName, isRegister, password]);
 
-    function onSubmit() {
-        if (!canSubmit) {
-            if (isRegister && confirmPassword.trim() !== password.trim()) {
-                setMessage("Passwords do not match.");
-                return;
-            }
-            setMessage("Please fill in all required fields.");
+    async function onSubmit() {
+
+        if (!canSubmit){
+            // console.log("Form validation failed, stopping.");
             return;
-        }
+        } 
 
-        setMessage(isRegister ? "Registration successful!" : "Sign in successful!");
-
-        setTimeout(() => {
+        try {
             if (isRegister) {
-                // Route new users to the setup wizard
-                navigation.navigate("CompleteProfile");
+                // Send Registration Request
+                const response = await fetch(`${API_BASE_URL}/users/register`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ firstName, lastName, email, password })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    // SAVE THE TOKEN TO THE PHONE
+                    await AsyncStorage.setItem('userToken', data.token);
+                    
+                    setMessage("Registration successful!");
+                    
+                    setTimeout(() => {
+                        navigation.navigate("CompleteProfile");
+                    }, 1000);
+                } else {
+                    setMessage(data.message || "Registration failed.");
+                }
             } else {
-                // Route returning users straight to the dashboard
-                navigation.replace("MainDashboard");
+                // Send Login Request
+                const response = await fetch(`${API_BASE_URL}/users/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password }) 
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    // SAVE THE TOKEN TO THE PHONE
+                    await AsyncStorage.setItem('userToken', data.token);
+                    
+                    setMessage("Sign in successful!");
+                    
+                    // Route returning users directly to the main app
+                    setTimeout(() => {
+                        navigation.replace("MainDashboard"); 
+                    }, 1000);
+                } else {
+                    setMessage(data.message || "Invalid email or password.");
+                }
             }
-        }, 1000);
+        } catch (error) {
+            // console.error("The exact network error is:", error);
+            setMessage("Network error. Please make sure your backend is running.");
+        }
     }
 
     return (
