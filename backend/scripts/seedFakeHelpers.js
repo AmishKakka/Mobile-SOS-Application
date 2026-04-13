@@ -1,24 +1,3 @@
-/**
- * seedFakeHelpers.js
- *
- * Seeds 10 fake helpers into Redis and simulates them walking —
- * updating their position every time they've moved ~300 meters.
- *
- * ─── REDIS SCHEMA (what dynamicProximitySearch.js actually reads) ────────────
- *
- * Your original code used:
- *   active-users:{h3Index}:{userId}  →  HASH  { lat, long }     ← WRONG
- *
- * dynamicProximitySearch.js reads:
- *   active-users:{h3Cell}            →  SET   [ userId, ... ]   ← correct
- *   last-location:{userId}           →  HASH  { lat, long, region }
- *
- * The SET per H3 cell is how triggerSOS finds nearby users via h3.gridRing().
- * Without a SET entry the user is invisible to the SOS search engine.
- *
- * Run:  node scripts/seedFakeHelpers.js
- */
-
 const Redis = require('ioredis');
 const h3    = require('h3-js');
 

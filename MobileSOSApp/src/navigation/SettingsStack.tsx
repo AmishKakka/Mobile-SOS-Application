@@ -1,29 +1,30 @@
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import React from 'react';
 
-// --- Auth & Onboarding Imports (Industry Standard Path) ---
+// Auth & Onboarding
 import GetStartedScreen from '../features/auth/GetStartedScreen';
 import LocationAccessScreen from '../features/auth/LocationAccessScreen';
 import AuthScreen from '../features/auth/AuthScreen';
 
-// --- Other Feature Imports (From the screens folder to maintain modularity) ---
+// Core screens
 import EditProfileScreen from '../features/screens/EditProfileScreen';
 import EmergencyContactsScreen from '../features/screens/EmergencyContactsScreen';
 import MedicalProfileScreen from '../features/screens/MedicalProfileScreen';
 import HelperDashboardScreen from '../features/screens/HelperDashBoard';
+import HelperGuidelinesScreen from '../features/screens/HelperGuidelines';
 import HelperSOSNotificationScreen from '../features/screens/HelperSOSNotificationScreen';
 import HelperTrackingScreen from '../features/screens/HelperTrackingScreen';
 import SOSCompletionScreen from '../features/screens/SOSCompletionScreen';
+import SOSActiveScreen from '../features/screens/SOSActiveScreen';
 import SettingsScreen from '../features/screens/SettingsScreen';
 import MainDashboard from '../features/screens/MainDashboard';
-import HelperGuidelinesScreen from '../features/screens/HelperGuidelines';
 import DynamicProximitySearch from '../features/sos-tracking/components/DynamicProximitySearch';
 
 const Stack = createNativeStackNavigator();
 
 const SettingsStack = () => {
   return (
-    <Stack.Navigator 
+    <Stack.Navigator
       initialRouteName="GetStarted"
       screenOptions={{
         headerStyle: { backgroundColor: '#fff' },
@@ -32,60 +33,33 @@ const SettingsStack = () => {
         headerShadowVisible: true,
       }}
     >
-      {/* 1. ONBOARDING FLOW (Figma Specs) */}
+      {/* 1. ONBOARDING */}
       <Stack.Screen 
-        name="GetStarted" 
-        component={GetStartedScreen} 
-        options={{ headerShown: false }} 
-      />
+        name="GetStarted"     
+        component={GetStartedScreen}     
+        options={{ headerShown: false }} />
       <Stack.Screen 
         name="LocationAccess" 
-        component={LocationAccessScreen} 
-        options={{ headerShown: false }} 
-      />
+        component={LocationAccessScreen}  
+        options={{ headerShown: false }} />
 
-      {/* 2. AUTHENTICATION */}
-      <Stack.Screen 
-        name="AuthScreen" 
-        component={AuthScreen} 
-        options={{ headerShown: false }} 
-      />
+      {/* 2. AUTH */}
+      <Stack.Screen name="AuthScreen" component={AuthScreen} options={{ headerShown: false }} />
 
-      {/* 3. CORE APP SCREENS */}
-      <Stack.Screen 
-        name="MainDashboard" 
-        component={MainDashboard} 
-        options={{ headerShown: false }} 
-      />
+      {/* 3. CORE */}
+      <Stack.Screen name="MainDashboard" component={MainDashboard} options={{ headerShown: false }} />
 
-      <Stack.Screen 
-        name="EmergencySearch" 
-        component={DynamicProximitySearch as any} 
-        options={{ 
-            headerShown: false, 
-            gestureEnabled: false 
-        }} 
-      />
-
-      <Stack.Screen name="SettingsHome" component={SettingsScreen} options={{ title: 'Settings' }} />
-      <Stack.Screen name="EditProfile" component={EditProfileScreen} options={{ title: 'Edit Profile' }} />
-      <Stack.Screen name="HelperDashboard" component={HelperDashboardScreen} options={{ title: 'Helper Dashboard', headerShadowVisible: false }} />
-      
-      <Stack.Screen 
-        name="HelperGuidelines" 
-        component={HelperGuidelinesScreen} 
-        options={{ title: 'Guidelines', headerShadowVisible: false, headerStyle: { backgroundColor: '#f9fafb' } }} 
-      />
-
+      {/* Victim SOS active screen — gestureEnabled false prevents accidental back swipe */}
       <Stack.Screen
-        name="EmergencyContacts"
-        component={EmergencyContactsScreen}
-        options={{ title: 'Emergency Contacts' }}
+        name="SOSActiveScreen"
+        component={SOSActiveScreen}
+        options={{ headerShown: false, gestureEnabled: false }}
       />
+      {/* Helper flow */}
       <Stack.Screen
-        name="MedicalProfile"
-        component={MedicalProfileScreen}
-        options={{ title: 'Medical Profile' }}
+        name="EmergencySearch"
+        component={DynamicProximitySearch as any}
+        options={{ headerShown: false, gestureEnabled: false }}
       />
       <Stack.Screen
         name="HelperSOSNotification"
@@ -102,6 +76,22 @@ const SettingsStack = () => {
         component={SOSCompletionScreen as any}
         options={{ headerShown: false }}
       />
+
+      {/* Settings stack */}
+      <Stack.Screen name="SettingsHome"  component={SettingsScreen}         options={{ title: 'Settings' }} />
+      <Stack.Screen name="EditProfile"   component={EditProfileScreen}       options={{ title: 'Edit Profile' }} />
+      <Stack.Screen name="MedicalProfile" component={MedicalProfileScreen}  options={{ title: 'Medical Profile' }} />
+      <Stack.Screen
+        name="HelperDashboard"
+        component={HelperDashboardScreen}
+        options={{ title: 'Helper Dashboard', headerShadowVisible: false }}
+      />
+      <Stack.Screen
+        name="HelperGuidelines"
+        component={HelperGuidelinesScreen}
+        options={{ title: 'Guidelines', headerShadowVisible: false, headerStyle: { backgroundColor: '#f9fafb' } }}
+      />
+      <Stack.Screen name="EmergencyContacts" component={EmergencyContactsScreen} options={{ title: 'Emergency Contacts' }} />
     </Stack.Navigator>
   );
 };
