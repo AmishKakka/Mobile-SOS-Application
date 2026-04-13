@@ -33,18 +33,28 @@ export default function AuthScreen({ navigation }: AuthScreenProps) {
 
     const isRegister = mode === "register";
 
+    // Move these UP here so the canSubmit function can see them!
+    const hasLength = password.length >= 8 && password.length <= 16;
+    const hasNumber = /\d/.test(password); 
+    const hasSymbol = /[!@#$%^&*(),.?":{}|<>]/.test(password); 
+
     const canSubmit = useMemo(() => {
         if (!email.trim() || !password.trim()) return false;
-        if (isRegister) {
-        // Check if both first and last names have content
-        const hasValidName = firstName.trim().length > 0 && lastName.trim().length > 0;
-        const passwordsMatch = confirmPassword.trim() === password.trim();
         
-        return hasValidName && passwordsMatch;
-    }
+        if (isRegister) {
+            // Check if both first and last names have content
+            const hasValidName = firstName.trim().length > 0 && lastName.trim().length > 0;
+            const passwordsMatch = confirmPassword.trim() === password.trim();
+            
+            // Group the new rules together
+            const isPasswordValid = hasLength && hasNumber && hasSymbol;
+            
+            // Enforce ALL rules before allowing the button to work
+            return hasValidName && passwordsMatch && isPasswordValid;
+        }
+        
         return true;
-    }, [confirmPassword, email, firstName, lastName, isRegister, password]);
-
+    }, [confirmPassword, email, firstName, lastName, isRegister, password, hasLength, hasNumber, hasSymbol]);
     async function onSubmit() {
 
         if (!canSubmit){
@@ -104,6 +114,7 @@ export default function AuthScreen({ navigation }: AuthScreenProps) {
             setMessage("Network error. Please make sure your backend is running.");
         }
     }
+
 
     return (
         <SafeAreaView style={styles.safeArea}>
@@ -207,6 +218,20 @@ export default function AuthScreen({ navigation }: AuthScreenProps) {
                         </View>
                     )}
 
+                    {isRegister && (
+                        <View style={styles.passwordRequirements}>
+                            <Text style={[styles.reqText, hasLength ? styles.reqMet : styles.reqUnmet]}>
+                                {hasLength ? '✓' : '○'} 8-16 characters
+                            </Text>
+                            <Text style={[styles.reqText, hasNumber ? styles.reqMet : styles.reqUnmet]}>
+                                {hasNumber ? '✓' : '○'} At least 1 number
+                            </Text>
+                            <Text style={[styles.reqText, hasSymbol ? styles.reqMet : styles.reqUnmet]}>
+                                {hasSymbol ? '✓' : '○'} At least 1 special symbol
+                            </Text>
+                        </View>
+                    )}
+
                     {message ? <Text style={styles.messageText}>{message}</Text> : null}
 
                     <Pressable
@@ -240,4 +265,19 @@ const styles = StyleSheet.create({
     submitButtonDisabled: { backgroundColor: "#fca5a5" },
     submitButtonText: { color: "white", fontSize: 18, fontWeight: "bold" },
     messageText: { color: "#F40009", textAlign: "center", marginTop: 10, fontWeight: "600" },
+    passwordRequirements: {
+        marginTop: -10,
+        marginBottom: 16,
+        paddingHorizontal: 4,
+    },
+    reqText: {
+        fontSize: 12,
+        marginTop: 4,
+    },
+    reqMet: {
+        color: '#10B981', // Green when passed
+    },
+    reqUnmet: {
+        color: '#6B7280', // Gray when failing
+    },
 });

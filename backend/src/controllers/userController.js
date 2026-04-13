@@ -8,6 +8,13 @@ exports.registerUser = async (req, res) => {
     try {
         const { firstName, lastName, email, password } = req.body;
 
+        const passwordRegex = /^(?=.*[0-9])(?=.*[!@#$%^&*(),.?":{}|<>]).{8,16}$/;
+        if (!passwordRegex.test(password)) {
+            return res.status(400).json({ 
+                message: 'Password must be 8-16 characters long and include at least one number and one symbol.' 
+            });
+        }
+
         //Check if user already exists
         let user = await User.findOne({ email });
         if (user) {
