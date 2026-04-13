@@ -1,31 +1,84 @@
-import { useEffect, useRef, useState } from 'react';
-import { getSocket } from './socketService';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Geolocation from 'react-native-geolocation-service';
+import { getSocket } from './socketService';
 
-export const USER_LOCATION = { latitude: 33.4150, longitude: -111.9085 };
-const VICTIM_USER_ID = 'victim_demo_001';
 export interface HelperLocation {
-  userId: string; name: string; latitude: number; longitude: number; distanceMeters?: number;
+  userId: string;
+  name: string;
+  latitude: number;
+  longitude: number;
+  distanceMeters?: number;
+}
+
+export interface MapLocation {
+  latitude: number;
+  longitude: number;
 }
 
 export interface SOSState {
-  isSearching: boolean; searchRadius: number; timerCount: number; helpers: HelperLocation[]; isConnected: boolean;
+  isSearching: boolean;
+  searchRadius: number;
+  timerCount: number;
+  helpers: HelperLocation[];
+  isConnected: boolean;
+  statusMessage: string;
+  assignedHelperId: string | null;
 }
 
 export interface SOSActions {
-  triggerSOS: () => void; cancelSOS: () => void;
+  triggerSOS: () => Promise<void>;
+  cancelSOS: () => void;
 }
 
-export function useSOS(): SOSState & SOSActions {
+function computeVisualRadius(helpers: HelperLocation[]) {
+  if (!helpers.length) {
+    return 250;
+  }
+
+  const farthest = Math.max(...helpers.map((helper) => helper.distanceMeters || 0));
+  return Math.max(250, Math.min(3000, Math.ceil((farthest + 100) / 50) * 50));
+}
+
+export function useSOS({
+  userId,
+  currentLocation,
+}: {
+  userId?: string;
+  currentLocation: MapLocation | null;
+}): SOSState & SOSActions {
   const [isSearching, setIsSearching] = useState(false);
   const [searchRadius, setSearchRadius] = useState(0);
   const [timerCount, setTimerCount] = useState(0);
   const [helpers, setHelpers] = useState<HelperLocation[]>([]);
   const [isConnected, setIsConnected] = useState(false);
+  const [statusMessage, setStatusMessage] = useState('Ready');
+  const [assignedHelperId, setAssignedHelperId] = useState<string | null>(null);
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const watchIdRef = useRef<number | null>(null);
-  const roomId = `incident_${VICTIM_USER_ID}`;
+  const roomId = useMemo(() => (userId ? `incident_${userId}` : null), [userId]);
+
+  const stopLocalTracking = useCallback(() => {
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+
+    if (watchIdRef.current !== null) {
+      Geolocation.clearWatch(watchIdRef.current);
+      watchIdRef.current = null;
+    }
+  }, []);
+
+  const resetSOSState = useCallback(() => {
+    stopLocalTracking();
+    setIsSearching(false);
+    setSearchRadius(0);
+    setTimerCount(0);
+    setHelpers([]);
+    setAssignedHelperId(null);
+    setStatusMessage('Ready');
+  }, [stopLocalTracking]);
 
   useEffect(() => {
     const socket = getSocket();
@@ -34,93 +87,249 @@ export function useSOS(): SOSState & SOSActions {
 
     socket.on('connect', onConnect);
     socket.on('disconnect', onDisconnect);
-    if (socket.connected) setIsConnected(true);
-
-    const onHelpersFound = (payload: any) => {
-      const mapped = payload.helpers.map((h: any) => ({
-        userId: h.userId, name: h.name, latitude: h.lat, longitude: h.long, distanceMeters: h.distance,
-      }));
-      setHelpers(prev => {
-        const existing = new Set(prev.map(h => h.userId));
-        return [...prev, ...mapped.filter(h => !existing.has(h.userId))];
-      });
-    };
-
-    const onHelperMoved = (payload: any) => {
-      setHelpers(prev => prev.map(h => h.userId === payload.helperId 
-        ? { ...h, latitude: payload.location.lat, longitude: payload.location.lng } : h));
-    };
-
-    const onHelperAssigned = (payload: any) => {
-      setHelpers(prev => prev.filter(h => h.userId === payload.helperId));
-    };
-
-    const onEscalate = () => setSearchRadius(0);
-    const onCancelled = () => cancelSOS();
-
-    socket.on(`sos_helpers_${roomId}`, onHelpersFound);
-    socket.on('update_helper_pin', onHelperMoved);
-    socket.on('helper_assigned', onHelperAssigned);
-    socket.on('escalate_to_911', onEscalate);
-    socket.on('cancel_alert', onCancelled);
+    if (socket.connected) {
+      setIsConnected(true);
+    }
 
     return () => {
       socket.off('connect', onConnect);
       socket.off('disconnect', onDisconnect);
-      socket.off(`sos_helpers_${roomId}`, onHelpersFound);
-      socket.off('update_helper_pin', onHelperMoved);
-      socket.off('helper_assigned', onHelperAssigned);
-      socket.off('escalate_to_911', onEscalate);
-      socket.off('cancel_alert', onCancelled);
     };
   }, []);
 
   useEffect(() => {
-    if (!isSearching) return;
+    if (!roomId) {
+      return;
+    }
+
+    const socket = getSocket();
+
+    const onHelpersFound = (payload: any) => {
+      if (payload.roomId !== roomId) {
+        return;
+      }
+
+      const mapped: HelperLocation[] = (payload.helpers || []).map((helper: any) => ({
+        userId: helper.userId,
+        name: helper.name || helper.userId,
+        latitude: helper.lat,
+        longitude: helper.long,
+        distanceMeters: helper.distance,
+      }));
+
+      setHelpers(mapped);
+      setSearchRadius(computeVisualRadius(mapped));
+      setStatusMessage(
+        mapped.length
+          ? `${mapped.length} helper${mapped.length > 1 ? 's' : ''} found nearby.`
+          : 'Searching nearby helpers...',
+      );
+    };
+
+    const onSearchProgress = (payload: any) => {
+      if (payload.roomId !== roomId) {
+        return;
+      }
+
+      const radiusMeters = Number(payload.radiusMeters);
+      if (Number.isFinite(radiusMeters) && radiusMeters > 0) {
+        setSearchRadius(radiusMeters);
+        setStatusMessage((previous) => {
+          if (
+            previous.includes('found nearby') ||
+            previous.includes('on the way') ||
+            previous.includes('Escalate')
+          ) {
+            return previous;
+          }
+
+          return `Searching within ${Math.round(radiusMeters)}m...`;
+        });
+      }
+    };
+
+    const onHelperMoved = (payload: any) => {
+      setHelpers((previous) =>
+        previous.map((helper) =>
+          helper.userId === payload.helperId
+            ? {
+              ...helper,
+              latitude: payload.location.lat,
+              longitude: payload.location.lng,
+            }
+            : helper,
+        ),
+      );
+    };
+
+    const onHelperAssigned = (payload: any) => {
+      if (payload.roomId !== roomId) {
+        return;
+      }
+
+      setAssignedHelperId(payload.helperId);
+      setHelpers((previous) => previous.filter((helper) => helper.userId === payload.helperId));
+      setStatusMessage(payload.message || 'A helper is on the way.');
+    };
+
+    const onEscalate = (payload: any) => {
+      if (payload.roomId !== roomId) {
+        return;
+      }
+      setStatusMessage(payload.message || 'No helpers available. Escalate immediately.');
+    };
+
+    const onCancelled = (payload: any) => {
+      if (payload.roomId !== roomId) {
+        return;
+      }
+      resetSOSState();
+    };
+
+    const onResolved = (payload: any) => {
+      if (payload.roomId !== roomId) {
+        return;
+      }
+      setStatusMessage('Emergency marked as resolved.');
+      resetSOSState();
+    };
+
+    const onHelperCancelled = (payload: any) => {
+      if (payload.roomId !== roomId) {
+        return;
+      }
+      setAssignedHelperId(null);
+      setStatusMessage(payload.reason || 'Assigned helper stopped responding. Searching again...');
+    };
+
+    socket.on(`sos_helpers_${roomId}`, onHelpersFound);
+    socket.on('dispatch_search_progress', onSearchProgress);
+    socket.on('update_helper_pin', onHelperMoved);
+    socket.on('helper_assigned', onHelperAssigned);
+    socket.on('escalate_to_911', onEscalate);
+    socket.on('cancel_alert', onCancelled);
+    socket.on('incident_resolved', onResolved);
+    socket.on('helper_response_cancelled', onHelperCancelled);
+
+    return () => {
+      socket.off(`sos_helpers_${roomId}`, onHelpersFound);
+      socket.off('dispatch_search_progress', onSearchProgress);
+      socket.off('update_helper_pin', onHelperMoved);
+      socket.off('helper_assigned', onHelperAssigned);
+      socket.off('escalate_to_911', onEscalate);
+      socket.off('cancel_alert', onCancelled);
+      socket.off('incident_resolved', onResolved);
+      socket.off('helper_response_cancelled', onHelperCancelled);
+    };
+  }, [resetSOSState, roomId]);
+
+  useEffect(() => {
+    if (!isSearching) {
+      return;
+    }
+
     timerRef.current = setInterval(() => {
-      setTimerCount(prev => (prev >= 30 ? 30 : prev + 1));
+      setTimerCount((previous) => previous + 1);
     }, 1000);
-    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+
+    return () => {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+    };
   }, [isSearching]);
 
-  const triggerSOS = () => {
-    setIsSearching(true);
-    setSearchRadius(250);
-    setTimerCount(0);
-    setHelpers([]);
+  const triggerSOS = useCallback(async () => {
+    if (!userId || !roomId || !currentLocation) {
+      setStatusMessage('Current location is not ready yet.');
+      return;
+    }
 
     const socket = getSocket();
-    const initialLoc = { lat: 33.4150, lng: -111.9085 }; // fallback
+    const initialLocation = {
+      lat: currentLocation.latitude,
+      lng: currentLocation.longitude,
+    };
 
-    // Trigger SOS ONLY ONCE
-    socket.emit('sos_trigger', { userId: VICTIM_USER_ID, location: initialLoc });
+    setIsSearching(true);
+    setTimerCount(0);
+    setHelpers([]);
+    setSearchRadius(250);
+    setAssignedHelperId(null);
+    setStatusMessage('Searching nearby helpers...');
 
-    // Start high-accuracy live tracking
-    watchIdRef.current = Geolocation.watchPosition(
-      (position) => {
-        const loc = { lat: position.coords.latitude, lng: position.coords.longitude };
-        socket.emit('victim_location_update', { roomId, location: loc });
-      },
-      (error) => console.error("[ACTIVE GPS ERROR]", error),
-      { enableHighAccuracy: true, distanceFilter: 10, interval: 3000 }
-    );
+    socket.emit('sos_trigger', { userId, location: initialLocation });
 
-    console.log('[SOS] Triggered - Live tracking started');
-  };
+    try {
+      Geolocation.getCurrentPosition(
+        (position) => {
+          socket.emit('victim_location_update', {
+            roomId,
+            location: { lat: position.coords.latitude, lng: position.coords.longitude },
+          });
+        },
+        (error) => {
+          console.error('[SOS] Failed to refresh victim location:', error);
+        },
+        {
+          enableHighAccuracy: false,
+          timeout: 10000,
+          maximumAge: 10000,
+          forceLocationManager: true,
+          showLocationDialog: true,
+        },
+      );
 
-  const cancelSOS = () => {
+      watchIdRef.current = Geolocation.watchPosition(
+        (position) => {
+          socket.emit('victim_location_update', {
+            roomId,
+            location: { lat: position.coords.latitude, lng: position.coords.longitude },
+          });
+        },
+        (error) => console.error('[SOS] Failed to stream victim location:', error),
+        {
+          enableHighAccuracy: false,
+          distanceFilter: 25,
+          interval: 5000,
+          fastestInterval: 3000,
+          forceLocationManager: true,
+          showLocationDialog: true,
+        }
+      );
+    } catch (error) {
+      console.error('[SOS] watchPosition threw during SOS start:', error);
+      setStatusMessage('SOS active. Live location updates are temporarily unavailable.');
+    }
+  }, [currentLocation, roomId, userId]);
+
+  const cancelSOS = useCallback(() => {
+    if (!roomId) {
+      resetSOSState();
+      return;
+    }
+
     const socket = getSocket();
     socket.emit('sos_cancelled', { roomId });
-    setIsSearching(false);
-    setSearchRadius(0);
-    setHelpers([]);
-    setTimerCount(0);
-    if (timerRef.current) clearInterval(timerRef.current);
-    if (watchIdRef.current !== null) {
-      Geolocation.clearWatch(watchIdRef.current);
-      watchIdRef.current = null;
-    }
-  };
+    resetSOSState();
+  }, [resetSOSState, roomId]);
 
-  return { isSearching, searchRadius, timerCount, helpers, isConnected, triggerSOS, cancelSOS };
+  useEffect(() => {
+    return () => {
+      stopLocalTracking();
+    };
+  }, [stopLocalTracking]);
+
+  return {
+    isSearching,
+    searchRadius,
+    timerCount,
+    helpers,
+    isConnected,
+    statusMessage,
+    assignedHelperId,
+    triggerSOS,
+    cancelSOS,
+  };
 }

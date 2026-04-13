@@ -2,7 +2,9 @@
 #
 .DS_Store
 package-lock.json
-keys.ts
+src/config/keys.ts
+android/app/google-services.json
+
 
 # Xcode
 #

@@ -3,146 +3,130 @@ import Geolocation from 'react-native-geolocation-service';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getSocket } from './socketService';
 
-const OFFLINE_QUEUE_KEY = '@offline_location_queue';
-const LAST_LOCATION_KEY = '@last_known_location'
-const CURRENT_USER_ID = 'victim_demo_001'; // Replace with dynamic auth user ID
+const OFFLINE_QUEUE_PREFIX = '@offline_location_queue:';
+const LAST_LOCATION_PREFIX = '@last_known_location:';
 
-// ─── PHASE 4: OFFLINE PROTOCOL (The Dead Zone) ──────────────
-export async function queueOfflineLocation(location: any) {
+function getQueueKey(userId: string) { return `${OFFLINE_QUEUE_PREFIX}${userId}`; }
+function getLastLocKey(userId: string) { return `${LAST_LOCATION_PREFIX}${userId}`; }
+
+export async function queueOfflineLocation(userId: string, location: any) {
   try {
-    const existingQueue = await AsyncStorage.getItem(OFFLINE_QUEUE_KEY);
-    const queue = existingQueue ? JSON.parse(existingQueue) : [];
+    const key = getQueueKey(userId);
+    const queue = JSON.parse((await AsyncStorage.getItem(key)) || '[]');
     queue.push({ ...location, timestamp: Date.now() });
-    await AsyncStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(queue));
-    console.log(`[OFFLINE] Location cached. Queue size: ${queue.length}`);
-  } catch (error) {
-    console.error('[OFFLINE ERROR] Failed to save location locally', error);
-  }
+    await AsyncStorage.setItem(key, JSON.stringify(queue));
+  } catch (e) { console.error('[OFFLINE]', e); }
 }
 
-export async function flushOfflineQueue() {
+export async function flushOfflineQueue(userId: string) {
   const socket = getSocket();
-  if (!socket || !socket.connected) return;
+  if (!socket.connected) return;
 
-  try {
-    const existingQueue = await AsyncStorage.getItem(OFFLINE_QUEUE_KEY);
-    if (!existingQueue) return;
+  const key = getQueueKey(userId);
+  const queueStr = await AsyncStorage.getItem(key);
+  if (!queueStr) return;
 
-    const queue = JSON.parse(existingQueue);
-    if (queue.length === 0) return;
+  const queue = JSON.parse(queueStr);
+  if (!Array.isArray(queue) || queue.length === 0) return;
 
-    console.log(`[SYNC] Flushing ${queue.length} offline locations to server...`);
-
-    // Send bulk update to backend
-    socket.emit('bulk_location_update', { userId: CURRENT_USER_ID, locations: queue });
-
-    // Clear the local queue once sent
-    await AsyncStorage.removeItem(OFFLINE_QUEUE_KEY);
-  } catch (error) {
-    console.error('[SYNC ERROR] Failed to flush offline queue', error);
-  }
+  socket.emit('bulk_location_update', { userId, locations: queue });
+  await AsyncStorage.removeItem(key);
 }
 
-// ─── PHASE 2: PASSIVE STATE (500m + 30-min heartbeat) ──────────────
-const sleep = (time: number) => new Promise<void>((resolve) => setTimeout(() => resolve(), time));
+const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
+const passiveLocationTask = async (taskData: { delay: number; userId: string }) => {
+  const { delay, userId } = taskData;
 
-const passiveLocationTask = async (taskDataArguments: any) => {
-  const { delay } = taskDataArguments;
+  while (BackgroundJob.isRunning()) {
+    Geolocation.getCurrentPosition(
+      async (pos) => {
+        const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude, timestamp: Date.now() };
 
-  await new Promise(async (resolve) => {
-    for (let i = 0; BackgroundJob.isRunning(); i++) {
-      Geolocation.getCurrentPosition(
-        async (position) => {
-          const currentLoc = {
-            lat: position.coords.latitude,
-            lng: position.coords.longitude,
-            timestamp: Date.now(),
-          };
+        const lastStr = await AsyncStorage.getItem(getLastLocKey(userId));
+        let shouldSend = true;
 
-          // Get last known location
-          const lastLocStr = await AsyncStorage.getItem(LAST_LOCATION_KEY);
-          let shouldSend = true;
-
-          if (lastLocStr) {
-            const lastLoc = JSON.parse(lastLocStr);
-            const distanceMeters = calculateDistance(
-              lastLoc.lat, lastLoc.lng,
-              currentLoc.lat, currentLoc.lng
-            );
-
-            const timeSinceLastMs = currentLoc.timestamp - lastLoc.timestamp;
-
-            // Trigger update if:
-            //   • Moved 500 meters OR more, OR
-            //   • 30 minutes have passed (safety heartbeat)
-            shouldSend = distanceMeters >= 500 || timeSinceLastMs >= 30 * 60 * 1000;
-          }
-
-          if (shouldSend) {
-            const socket = getSocket();
-            if (socket && socket.connected) {
-              socket.emit('my_location_updated', {
-                userId: CURRENT_USER_ID,
-                ...currentLoc,
-              });
-              console.log(`[PASSIVE] Sent update (moved ${shouldSend ? '≥500m' : 'HEARTBEAT'})`);
-            } else {
-              queueOfflineLocation(currentLoc);
-              console.log(`[PASSIVE] Queued offline update`);
-            }
-
-            // Save current location as the new "last known"
-            await AsyncStorage.setItem(LAST_LOCATION_KEY, JSON.stringify(currentLoc));
-          } else {
-            console.log(`[PASSIVE] Skipped moved < 500m and no heartbeat needed`);
-          }
-        },
-        (error) => console.error('[PASSIVE ERROR]', error),
-        {
-          enableHighAccuracy: false,   // battery friendly
-          timeout: 15000,
-          maximumAge: 60000,
+        if (lastStr) {
+          const last = JSON.parse(lastStr);
+          const dist = calculateDistance(last.lat, last.lng, loc.lat, loc.lng);
+          const timePassed = loc.timestamp - last.timestamp;
+          shouldSend = dist >= 500 || timePassed >= 30 * 60 * 1000;
         }
-      );
 
-      // Wait 5 minutes before next check
-      await sleep(delay);
-    }
+        if (shouldSend) {
+          const socket = getSocket();
+          if (socket.connected) {
+            socket.emit('my_location_updated', { userId, ...loc });
+          } else {
+            await queueOfflineLocation(userId, loc);
+          }
+          await AsyncStorage.setItem(getLastLocKey(userId), JSON.stringify(loc));
+        }
+      },
+      () => {},
+      { enableHighAccuracy: false, timeout: 15000, maximumAge: 60000 }
+    );
+
+    await sleep(delay);
+  }
+};
+
+function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number) {
+  const R = 6371e3;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+            Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+}
+
+export async function sendImmediateLocation(userId: string) {
+  return new Promise<{ lat: number; lng: number; timestamp: number }>((resolve, reject) => {
+    Geolocation.getCurrentPosition(
+      async (pos) => {
+        const loc = {
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+          timestamp: Date.now(),
+        };
+
+        try {
+          const socket = getSocket();
+          if (socket.connected) {
+            socket.emit('my_location_updated', { userId, ...loc });
+          } else {
+            await queueOfflineLocation(userId, loc);
+          }
+
+          await AsyncStorage.setItem(getLastLocKey(userId), JSON.stringify(loc));
+          resolve(loc);
+        } catch (error) {
+          reject(error);
+        }
+      },
+      reject,
+      {
+        enableHighAccuracy: false,
+        timeout: 15000,
+        maximumAge: 60000,
+      }
+    );
+  });
+}
+
+export const startPassiveTracking = async (userId: string) => {
+  if (BackgroundJob.isRunning()) return;
+  await BackgroundJob.start(passiveLocationTask, {
+    taskName: 'SafeGuardPassiveTracking',
+    taskTitle: 'SafeGuard is protecting you',
+    taskDesc: 'Running background safety checks',
+    taskIcon: { name: 'ic_launcher', type: 'mipmap' },
+    color: '#ff0000',
+    parameters: { delay: 300000, userId },
   });
 };
 
-const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
-  const R = 6371e3; // Earth radius in meters
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLon = (lon2 - lon1) * Math.PI / 180;
-  const phi1 = lat1 * Math.PI / 180;
-  const phi2 = lat2 * Math.PI / 180;
-
-  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(phi1) * Math.cos(phi2) *
-    Math.sin(dLon / 2) * Math.sin(dLon / 2);
-
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c; // returns distance in meters
-};
-
-const backgroundOptions = {
-  taskName: 'SafeGuardPassiveTracking',
-  taskTitle: 'SafeGuard is protecting you',
-  taskDesc: 'Running background safety checks',
-  taskIcon: { name: 'ic_launcher', type: 'mipmap' },
-  color: '#ff0000',
-  parameters: { delay: 300000 }, // 5 minutes in milliseconds
-};
-
-export const startPassiveTracking = async () => {
-  if (!BackgroundJob.isRunning()) {
-    await BackgroundJob.start(passiveLocationTask, backgroundOptions);
-    console.log('[PASSIVE] Background tracking initialized');
-  }
-};
-
 export const stopPassiveTracking = async () => {
-  await BackgroundJob.stop();
+  if (BackgroundJob.isRunning()) await BackgroundJob.stop();
 };

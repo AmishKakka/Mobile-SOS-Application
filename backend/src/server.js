@@ -1,78 +1,148 @@
 require('dotenv').config();
+
 const express = require('express');
 const http = require('http');
 const cors = require('cors');
 const Redis = require('ioredis');
-const initializeSocket = require('./sockets/socket');
 const mongoose = require('mongoose');
+const initializeSocket = require('./sockets/socket');
 const User = require('./models/User');
 
-const REQUIRED_ENV = ['REDIS_HOST'];
+const REQUIRED_ENV = ['MONGO_URI'];
 const missing = REQUIRED_ENV.filter((key) => !process.env[key]);
+
 if (missing.length > 0) {
   console.error(`Missing required environment variables: ${missing.join(', ')}`);
   process.exit(1);
 }
 
-const PORT = process.env.PORT || 3000;
-const REDIS_HOST = process.env.REDIS_HOST || '127.0.0.1';
-const REDIS_URL = `redis://${REDIS_HOST}:6379`;
+const PORT = Number(process.env.PORT || 3000);
+const REDIS_URL =
+  process.env.REDIS_URL ||
+  `redis://${process.env.REDIS_HOST || '127.0.0.1'}:6379`;
 
 const app = express();
-app.use(cors());
-app.use(express.json());
-
-const MONGO_URI = process.env.MONGO_URI
-mongoose.connect(MONGO_URI)
-  .then(() => console.log('✅ Connected to MongoDB Atlas'))
-  .catch(err => console.error('🔥 MongoDB Connection Error:', err));
-
 const server = http.createServer(app);
 
-app.get('/health', (req, res) => res.status(200).json({ status: 'ok' }));
+app.use(cors());
+app.use(express.json({ limit: '1mb' }));
 
-app.post('/test-user', async (req, res) => {
+mongoose
+  .connect(process.env.MONGO_URI)
+  .then(() => console.log('✅ Connected to MongoDB'))
+  .catch((error) => {
+    console.error('🔥 MongoDB connection error:', error);
+    process.exit(1);
+  });
+
+app.get('/health', async (req, res) => {
+  const mongoReady = mongoose.connection.readyState === 1;
+
+  res.status(mongoReady ? 200 : 503).json({
+    status: mongoReady ? 'ok' : 'degraded',
+    mongoReady,
+  });
+});
+
+app.get('/users/:userId', async (req, res) => {
   try {
-    const { name, fcmToken, phone } = req.body;
+    const user = await User.findById(req.params.userId).lean();
 
-    // Create a new user based on your User.js schema
-    const newUser = new User({
-      // We use the ID of one of your fake helpers from seedFakeHelpers.js 
-      // so the proximity search actually finds them!
-      _id: "helper_001", // Forcing the ID to match your simulation
-      name: name || "Alex R. (Test Helper)",
-      fcmToken: fcmToken || "dummy_firebase_token_123",
-      emergencyContacts: [{
-        name: "Emergency Contact 1",
-        phoneNumber: phone || "+15551234567"
-      }]
-    });
-
-    // Save to MongoDB Atlas
-    const savedUser = await newUser.save();
-    console.log("✅ Test user injected into MongoDB:", savedUser._id);
-
-    res.status(201).json({ message: "Test user created successfully!", user: savedUser });
-  } catch (error) {
-    // If the user already exists (duplicate _id), just update them instead
-    if (error.code === 11000) {
-      const updatedUser = await User.findByIdAndUpdate("helper_001", req.body, { new: true });
-      return res.status(200).json({ message: "Test user updated!", user: updatedUser });
+    if (!user) {
+      return res.status(404).json({ error: 'User not found.' });
     }
-    console.error("🔥 Failed to create test user:", error);
-    res.status(500).json({ error: "Internal Server Error" });
+
+    return res.status(200).json(user);
+  } catch (error) {
+    console.error('[API] Failed to fetch user:', error);
+    return res.status(500).json({ error: 'Internal server error.' });
   }
 });
 
-// Three separate clients are required:
-//   - redisClient : general reads/writes
-//   - pubClient   : Socket.IO Redis adapter publisher
-//   - subClient   : Socket.IO Redis adapter subscriber
-const redisOpts = {
-  // Send an actual 'PING' command to ElastiCache every 30 seconds
-  // AWS will never see this connection as "idle" again!
-  pingInterval: 30000,
+app.put('/users/:userId/device', async (req, res) => {
+  const userId = String(req.params.userId || '').trim();
+  const {
+    name,
+    role,
+    fcmToken,
+    isHelperAvailable,
+    emergencyContacts,
+  } = req.body || {};
 
+  if (!userId) {
+    return res.status(400).json({ error: 'userId is required.' });
+  }
+
+  try {
+    const update = {
+      ...(typeof name === 'string' && name.trim()
+        ? { name: name.trim() }
+        : {}),
+      ...(typeof role === 'string' ? { role } : {}),
+      ...(typeof fcmToken === 'string' || fcmToken === null
+        ? { fcmToken }
+        : {}),
+      ...(typeof isHelperAvailable === 'boolean'
+        ? { isHelperAvailable }
+        : {}),
+      ...(Array.isArray(emergencyContacts) ? { emergencyContacts } : {}),
+    };
+
+    const user = await User.findByIdAndUpdate(
+      userId,
+      { $set: update, $setOnInsert: { _id: userId } },
+      { new: true, upsert: true, setDefaultsOnInsert: true }
+    ).lean();
+
+    return res.status(200).json(user);
+  } catch (error) {
+    console.error('[API] Failed to upsert device/user profile:', error);
+    return res.status(500).json({ error: 'Internal server error.' });
+  }
+});
+
+app.put('/users/:userId/status', async (req, res) => {
+  const userId = String(req.params.userId || '').trim();
+  const { isHelperAvailable, lastKnownLocation } = req.body || {};
+
+  if (!userId) {
+    return res.status(400).json({ error: 'userId is required.' });
+  }
+
+  try {
+    const update = {};
+
+    if (typeof isHelperAvailable === 'boolean') {
+      update.isHelperAvailable = isHelperAvailable;
+    }
+
+    if (
+      lastKnownLocation &&
+      Number.isFinite(Number(lastKnownLocation.lat)) &&
+      Number.isFinite(Number(lastKnownLocation.lng))
+    ) {
+      update.lastKnownLocation = {
+        lat: Number(lastKnownLocation.lat),
+        lng: Number(lastKnownLocation.lng),
+        updatedAt: new Date(),
+      };
+    }
+
+    const user = await User.findByIdAndUpdate(
+      userId,
+      { $set: update, $setOnInsert: { _id: userId } },
+      { new: true, upsert: true, setDefaultsOnInsert: true }
+    ).lean();
+
+    return res.status(200).json(user);
+  } catch (error) {
+    console.error('[API] Failed to update user status:', error);
+    return res.status(500).json({ error: 'Internal server error.' });
+  }
+});
+
+const redisOpts = {
+  pingInterval: 30000,
   connectTimeout: 10000,
   enableReadyCheck: true,
   enableOfflineQueue: true,
@@ -89,16 +159,26 @@ const redisClient = new Redis(REDIS_URL, redisOpts);
 const pubClient = redisClient.duplicate();
 const subClient = redisClient.duplicate();
 
-redisClient.on('error', (err) => console.error('Redis main error:', err.message));
-pubClient.on('error', (err) => console.error('Redis pub error:', err.message));
-subClient.on('error', (err) => console.error('Redis sub error:', err.message));
+redisClient.on('error', (error) =>
+  console.error('Redis main error:', error.message)
+);
+pubClient.on('error', (error) =>
+  console.error('Redis pub error:', error.message)
+);
+subClient.on('error', (error) =>
+  console.error('Redis sub error:', error.message)
+);
 
 let readyCount = 0;
-const onRedisReady = () => {
-  readyCount++;
-  if (readyCount < 3) return;
 
-  console.log('All Redis clients connected to ElastiCache.');
+const onRedisReady = () => {
+  readyCount += 1;
+
+  if (readyCount < 3) {
+    return;
+  }
+
+  console.log('✅ All Redis clients connected.');
   initializeSocket(server, redisClient, pubClient, subClient);
 
   server.listen(PORT, () => {
@@ -110,19 +190,19 @@ redisClient.on('ready', onRedisReady);
 pubClient.on('ready', onRedisReady);
 subClient.on('ready', onRedisReady);
 
-const shutdown = async (signal) => {
+async function shutdown(signal) {
   console.log(`${signal} received — shutting down gracefully...`);
   server.close(() => console.log('HTTP server closed.'));
 
-  // Close Redis connections cleanly
   await Promise.allSettled([
     redisClient.quit(),
     pubClient.quit(),
     subClient.quit(),
+    mongoose.connection.close(),
   ]);
-  console.log('Redis clients disconnected.');
+
   process.exit(0);
-};
+}
 
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));

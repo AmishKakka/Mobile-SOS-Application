@@ -1,6 +1,20 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, Switch, TouchableOpacity, SafeAreaView, Image, ScrollView } from 'react-native';
-import { ChevronRight, HeartPulse, ShieldAlert, LogOut, BellRing, UserCircle } from "lucide-react-native";
+import React, { useEffect, useState } from 'react';
+import {
+  ActivityIndicator,
+  Image,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Switch,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+import { ChevronRight, HeartPulse, ShieldAlert, LogOut, UserCircle } from 'lucide-react-native';
+import {
+  getCommunityAvailabilitySnapshot,
+  setCommunityAvailability,
+} from '../../services/communityAvailability';
 
 type NavigationLike = { navigate: (screen: string, params?: Record<string, any>) => void };
 
@@ -8,7 +22,43 @@ type SettingsScreenProps = { navigation: NavigationLike };
 
 const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
   const [isAvailable, setIsAvailable] = useState(true);
-  const [notifications, setNotifications] = useState(true);
+  const [statusText, setStatusText] = useState('Loading availability...');
+  const [userName, setUserName] = useState('SafeGuard User');
+  const [userEmail, setUserEmail] = useState('local-demo@safeguard.app');
+  const [isBusy, setIsBusy] = useState(true);
+
+  useEffect(() => {
+    const bootstrap = async () => {
+      try {
+        const snapshot = await getCommunityAvailabilitySnapshot();
+        setIsAvailable(snapshot.isAvailable);
+        setStatusText(snapshot.statusText);
+        setUserName(snapshot.session.name);
+        setUserEmail(`${snapshot.session.userId}@local.demo`);
+      } catch (error: any) {
+        setStatusText(error?.message || 'Failed to load community availability.');
+      } finally {
+        setIsBusy(false);
+      }
+    };
+
+    bootstrap();
+  }, []);
+
+  const onToggleAvailability = async (nextValue: boolean) => {
+    setIsBusy(true);
+    try {
+      const result = await setCommunityAvailability(nextValue);
+      setIsAvailable(result.isAvailable);
+      setStatusText(result.statusText);
+      setUserName(result.session.name);
+      setUserEmail(`${result.session.userId}@local.demo`);
+    } catch (error: any) {
+      setStatusText(error?.message || 'Failed to update community availability.');
+    } finally {
+      setIsBusy(false);
+    }
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -21,8 +71,8 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
             style={styles.profilePic} 
           />
           <View style={styles.headerTextContainer}>
-            <Text style={styles.userName}>Amish Kakka</Text>
-            <Text style={styles.userEmail}>amishkakka@gmail.com</Text>
+            <Text style={styles.userName}>{userName}</Text>
+            <Text style={styles.userEmail}>{userEmail}</Text>
             <TouchableOpacity 
               style={styles.editProfileBtn} 
               onPress={() => navigation.navigate('EditProfile')}
@@ -41,15 +91,21 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
               </View>
               <View>
                 <Text style={styles.toggleTitle}>Community Availability</Text>
-                <Text style={styles.toggleSub}>Currently {isAvailable ? 'Available' : 'Do Not Disturb'}</Text>
+                <Text style={styles.toggleSub}>
+                  {isBusy ? 'Updating...' : statusText}
+                </Text>
               </View>
             </View>
-            <Switch 
-              value={isAvailable} 
-              onValueChange={setIsAvailable} 
-              trackColor={{ false: '#e5e7eb', true: '#fca5a5' }}
-              thumbColor={isAvailable ? '#dc2626' : '#f3f4f6'}
-            />
+            {isBusy ? (
+              <ActivityIndicator size="small" color="#dc2626" />
+            ) : (
+              <Switch
+                value={isAvailable}
+                onValueChange={onToggleAvailability}
+                trackColor={{ false: '#e5e7eb', true: '#fca5a5' }}
+                thumbColor={isAvailable ? '#dc2626' : '#f3f4f6'}
+              />
+            )}
           </View>
           <View style={styles.divider} />
         </View>

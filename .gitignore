@@ -11,3 +11,13 @@
 .DS_Store
 
 .env
+backend/.env
+backend/.env.*
+MobileSOSApp/src/config/keys.ts
+MobileSOSApp/android/app/google-services.json
+*.jks
+*.keystore
+*.p12
+*.pem
+*.key
+*.tfvars

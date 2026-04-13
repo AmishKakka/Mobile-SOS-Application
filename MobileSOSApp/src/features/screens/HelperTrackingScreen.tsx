@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -17,15 +17,20 @@ import type { ParamListBase } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
 
-import { fetchRoute, type RouteResult } from '../../utils/directions';
+import Geolocation from 'react-native-geolocation-service';
+import { fetchRoute } from '../../utils/directions';
 import { GOOGLE_MAPS_API_KEY } from '../../config/keys';
+import { requestForegroundLocationPermission } from '../../services/permissions';
+import { getSocket, registerSocketUser } from '../../services/socketService';
 
 const { width } = Dimensions.get('window');
 
 type TrackingParams = {
+  roomId: string;
+  helperId: string;
+  helperName: string;
   victimName: string;
   victimLocation: { latitude: number; longitude: number };
-  distance: string;
   incidentType: string;
 };
 
@@ -33,11 +38,6 @@ type Props = {
   navigation: NativeStackNavigationProp<ParamListBase>;
   route: RouteProp<{ params: TrackingParams }, 'params'>;
 };
-
-const HELPER_START = { latitude: 33.5, longitude: -111.320 };
-const TOTAL_STEPS = 30;
-const STEP_INTERVAL_MS = 2000;
-const REACHED_THRESHOLD_KM = 0.05;
 
 function haversineKm(
   a: { latitude: number; longitude: number },
@@ -52,60 +52,185 @@ function haversineKm(
   return 6371 * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
 }
 
-function interpolatePosition(
-  start: { latitude: number; longitude: number },
-  end: { latitude: number; longitude: number },
-  fraction: number,
-) {
-  return {
-    latitude: start.latitude + (end.latitude - start.latitude) * fraction,
-    longitude: start.longitude + (end.longitude - start.longitude) * fraction,
-  };
-}
-
 export default function HelperTrackingScreen({ navigation, route: navRoute }: Props) {
   const {
-    victimName = 'Sarah M.',
-    victimLocation = { latitude: 33.4152, longitude: -110.92 },
-    incidentType = 'Medical Emergency',
-  } = navRoute.params ?? {};
+    roomId,
+    helperId,
+    helperName,
+    victimName,
+    incidentType,
+  } = navRoute.params;
 
-  const [helperLocation, setHelperLocation] = useState(HELPER_START);
+  const [victimLocation, setVictimLocation] = useState(navRoute.params.victimLocation);
+  const [helperLocation, setHelperLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const [hasReached, setHasReached] = useState(false);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [notes, setNotes] = useState('');
   const [routeCoords, setRouteCoords] = useState<{ latitude: number; longitude: number }[] | null>(null);
   const [routeInfo, setRouteInfo] = useState<{ distanceText: string; durationText: string } | null>(null);
   const [isLoadingRoute, setIsLoadingRoute] = useState(true);
+  const [trackingError, setTrackingError] = useState<string | null>(null);
   const [travelMode, setTravelMode] = useState<'DRIVE' | 'WALK'>('DRIVE');
   const mapRef = useRef<MapView>(null);
-  const stepRef = useRef(0);
+  const watchIdRef = useRef<number | null>(null);
 
-  const distKm = haversineKm(helperLocation, victimLocation);
+  const distKm = helperLocation ? haversineKm(helperLocation, victimLocation) : 0;
   const distDisplay = routeInfo
     ? routeInfo.distanceText
-    : distKm < 0.1
-      ? `${Math.round(distKm * 1000)} m`
-      : `${distKm.toFixed(2)} km`;
-  const etaDisplay = routeInfo ? routeInfo.durationText : `${Math.max(1, Math.round(distKm / 0.08))} min`;
+    : helperLocation
+      ? distKm < 0.1
+        ? `${Math.round(distKm * 1000)} m`
+        : `${distKm.toFixed(2)} km`
+      : '--';
+  const etaDisplay = routeInfo ? routeInfo.durationText : helperLocation ? `${Math.max(1, Math.round(distKm / 0.08))} min` : '--';
 
-  // Fetch route whenever victimLocation or travelMode changes
+  useEffect(() => {
+    const socket = getSocket();
+    registerSocketUser(helperId, 'helper', helperName);
+
+    const onVictimMoved = (nextLocation: { lat: number; lng: number }) => {
+      setVictimLocation({ latitude: nextLocation.lat, longitude: nextLocation.lng });
+    };
+
+    const onIncidentResolved = (payload: any) => {
+      if (payload.roomId === roomId) {
+        navigation.replace('SOSCompletion', {
+          victimName,
+          responseTime: formatElapsed(elapsedSeconds),
+          distanceCovered: distDisplay,
+          outcome: payload.outcome || 'helped',
+          notes,
+        });
+      }
+    };
+
+    const onCancelled = (payload: any) => {
+      if (payload.roomId === roomId) {
+        Alert.alert('SOS Closed', payload.message || 'This incident has been closed.');
+        navigation.replace('HelperDashboard');
+      }
+    };
+
+    socket.on('update_victim_pin', onVictimMoved);
+    socket.on('incident_resolved', onIncidentResolved);
+    socket.on('cancel_alert', onCancelled);
+
+    return () => {
+      socket.off('update_victim_pin', onVictimMoved);
+      socket.off('incident_resolved', onIncidentResolved);
+      socket.off('cancel_alert', onCancelled);
+    };
+  }, [distDisplay, elapsedSeconds, helperId, helperName, navigation, notes, roomId, victimName]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const startLiveTracking = async () => {
+      const granted = await requestForegroundLocationPermission();
+      if (!granted) {
+        const message = 'Location access is required to guide you to the victim.';
+        setTrackingError(message);
+        setIsLoadingRoute(false);
+        Alert.alert('Permission required', message);
+        return;
+      }
+
+      Geolocation.getCurrentPosition(
+        (position) => {
+          if (!mounted) {
+            return;
+          }
+
+          const initialLocation = {
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude,
+          };
+
+          setTrackingError(null);
+          setHelperLocation(initialLocation);
+          getSocket().emit('helper_location_update', {
+            roomId,
+            helperId,
+            location: {
+              lat: initialLocation.latitude,
+              lng: initialLocation.longitude,
+            },
+          });
+        },
+        (error) => {
+          setTrackingError(error.message);
+          setIsLoadingRoute(false);
+          Alert.alert('GPS error', error.message);
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 15000,
+          maximumAge: 5000,
+        },
+      );
+
+      watchIdRef.current = Geolocation.watchPosition(
+        (position) => {
+          const nextLocation = {
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude,
+          };
+
+          setTrackingError(null);
+          setHelperLocation(nextLocation);
+          getSocket().emit('helper_location_update', {
+            roomId,
+            helperId,
+            location: {
+              lat: nextLocation.latitude,
+              lng: nextLocation.longitude,
+            },
+          });
+        },
+        (error) => {
+          setTrackingError(error.message);
+          console.error('[HELPER TRACKING] Location watch error:', error);
+        },
+        {
+          enableHighAccuracy: true,
+          distanceFilter: 10,
+          interval: 3000,
+          fastestInterval: 2000,
+        },
+      );
+    };
+
+    startLiveTracking();
+
+    return () => {
+      mounted = false;
+      if (watchIdRef.current !== null) {
+        Geolocation.clearWatch(watchIdRef.current);
+        watchIdRef.current = null;
+      }
+    };
+  }, [helperId, navigation, roomId]);
+
   useEffect(() => {
     let cancelled = false;
 
-    // Reset state for fresh fetch
+    if (!helperLocation) {
+      setIsLoadingRoute(false);
+      return;
+    }
+
     setIsLoadingRoute(true);
     setRouteCoords(null);
     setRouteInfo(null);
-    setHelperLocation(HELPER_START);
-    stepRef.current = 0;
 
     (async () => {
-      const result = await fetchRoute(HELPER_START, victimLocation, GOOGLE_MAPS_API_KEY, travelMode);
+      const result = await fetchRoute(helperLocation, victimLocation, GOOGLE_MAPS_API_KEY, travelMode);
 
-      if (cancelled) return;
+      if (cancelled) {
+        return;
+      }
+
       setIsLoadingRoute(false);
-
       if (result) {
         setRouteCoords(result.coordinates);
         setRouteInfo({
@@ -115,109 +240,74 @@ export default function HelperTrackingScreen({ navigation, route: navRoute }: Pr
       }
     })();
 
-    return () => { cancelled = true; };
-  }, [victimLocation, travelMode]);
+    return () => {
+      cancelled = true;
+    };
+  }, [helperLocation, travelMode, victimLocation]);
 
-  // Animate helper along route coordinates (or straight line as fallback)
   useEffect(() => {
-    if (isLoadingRoute) return;
-
-    const totalSteps = routeCoords ? routeCoords.length - 1 : TOTAL_STEPS;
-    if (totalSteps <= 0) return;
-
-    const interval = setInterval(() => {
-      stepRef.current += 1;
-      const step = Math.min(stepRef.current, totalSteps);
-
-      if (routeCoords) {
-        setHelperLocation(routeCoords[step]);
-      } else {
-        const fraction = step / totalSteps;
-        setHelperLocation(interpolatePosition(HELPER_START, victimLocation, fraction));
-      }
-
-      if (step >= totalSteps) {
-        clearInterval(interval);
-      }
-    }, STEP_INTERVAL_MS);
-
-    return () => clearInterval(interval);
-  }, [isLoadingRoute, routeCoords, victimLocation]);
-
-  // Elapsed time counter
-  useEffect(() => {
-    const timer = setInterval(() => setElapsedSeconds(s => s + 1), 1000);
+    const timer = setInterval(() => setElapsedSeconds((seconds) => seconds + 1), 1000);
     return () => clearInterval(timer);
   }, []);
 
-  // Detect arrival
   useEffect(() => {
-    if (distKm <= REACHED_THRESHOLD_KM && !hasReached) {
+    if (helperLocation && distKm <= 0.05 && !hasReached) {
       setHasReached(true);
     }
-  }, [distKm, hasReached]);
+  }, [distKm, hasReached, helperLocation]);
 
-  // Fit map to both markers (and route) whenever helper moves
   useEffect(() => {
-    if (mapRef.current) {
-      const coordsToFit = routeCoords ?? [helperLocation, victimLocation];
-      mapRef.current.fitToCoordinates(coordsToFit, {
-        edgePadding: { top: 100, right: 60, bottom: 320, left: 60 },
-        animated: true,
-      });
+    if (!mapRef.current || !helperLocation) {
+      return;
     }
-  }, [helperLocation, victimLocation, routeCoords]);
 
-  const formatElapsed = useCallback(() => {
-    const m = Math.floor(elapsedSeconds / 60);
-    const s = elapsedSeconds % 60;
-    return `${m}:${s.toString().padStart(2, '0')}`;
-  }, [elapsedSeconds]);
+    const coordsToFit = routeCoords ?? [helperLocation, victimLocation];
+    mapRef.current.fitToCoordinates(coordsToFit, {
+      edgePadding: { top: 100, right: 60, bottom: 320, left: 60 },
+      animated: true,
+    });
+  }, [helperLocation, routeCoords, victimLocation]);
 
-  const handleHelped = () => {
-    navigation.replace('SOSCompletion', {
-      victimName,
-      responseTime: formatElapsed(),
-      distanceCovered: distDisplay,
-      outcome: 'helped',
+  const handleCompleted = useCallback((outcome: 'helped' | 'cannot_handle') => {
+    getSocket().emit('helper_response_completed', {
+      roomId,
+      helperId,
+      outcome,
       notes,
     });
-  };
 
-  const handleCannotHandle = () => {
     navigation.replace('SOSCompletion', {
       victimName,
-      responseTime: formatElapsed(),
+      responseTime: formatElapsed(elapsedSeconds),
       distanceCovered: distDisplay,
-      outcome: 'cannot_handle',
+      outcome,
       notes,
     });
-  };
+  }, [distDisplay, elapsedSeconds, helperId, navigation, notes, roomId, victimName]);
 
   const handleAbort = () => {
     Alert.alert(
       'Abort Response',
-      'Are you sure you want to stop responding to this emergency?',
+      'If you abort after accepting, the backend must re-dispatch. Do this only if you genuinely cannot continue.',
       [
         { text: 'Continue', style: 'cancel' },
         {
           text: 'Abort',
           style: 'destructive',
-          onPress: () => navigation.reset({
-            index: 2,
-            routes: [
-              { name: 'AuthScreen' },
-              { name: 'MainDashboard' },
-              { name: 'HelperDashboard' },
-            ],
-          }),
+          onPress: () => {
+            getSocket().emit('helper_response_cancelled', {
+              roomId,
+              helperId,
+              reason: 'Helper manually aborted the response.',
+            });
+            navigation.replace('HelperDashboard');
+          },
         },
       ],
     );
   };
 
-  // Build the polyline coordinates: real route or straight line fallback
-  const polylineCoords = routeCoords ?? [helperLocation, victimLocation];
+  const polylineCoords = helperLocation ? routeCoords ?? [helperLocation, victimLocation] : [];
 
   return (
     <View style={styles.container}>
@@ -225,34 +315,41 @@ export default function HelperTrackingScreen({ navigation, route: navRoute }: Pr
         ref={mapRef}
         style={styles.map}
         initialRegion={{
-          latitude: (HELPER_START.latitude + victimLocation.latitude) / 2,
-          longitude: (HELPER_START.longitude + victimLocation.longitude) / 2,
+          latitude: victimLocation.latitude,
+          longitude: victimLocation.longitude,
           latitudeDelta: 0.025,
           longitudeDelta: 0.025,
         }}
       >
         <Marker coordinate={victimLocation} pinColor="#DC2626" title={victimName} description="Victim" />
-        <Marker coordinate={helperLocation} pinColor="#2563EB" title="You" description="Helper" />
-
-        <Polyline
-          coordinates={polylineCoords}
-          strokeColor="#2563EB"
-          strokeWidth={routeCoords ? 4 : 3}
-          lineDashPattern={routeCoords ? undefined : [8, 6]}
-        />
+        {helperLocation && <Marker coordinate={helperLocation} pinColor="#2563EB" title="You" description="Helper" />}
+        {polylineCoords.length > 1 && (
+          <Polyline
+            coordinates={polylineCoords}
+            strokeColor="#2563EB"
+            strokeWidth={routeCoords ? 4 : 3}
+            lineDashPattern={routeCoords ? undefined : [8, 6]}
+          />
+        )}
       </MapView>
 
-      {/* Route loading indicator */}
-      {isLoadingRoute && (
+      {((!helperLocation && !trackingError) || isLoadingRoute) && (
         <View style={styles.loadingOverlay}>
           <View style={styles.loadingPill}>
             <ActivityIndicator size="small" color="#2563EB" />
-            <Text style={styles.loadingText}>Loading route...</Text>
+            <Text style={styles.loadingText}>{helperLocation ? 'Loading route...' : 'Waiting for GPS fix...'}</Text>
           </View>
         </View>
       )}
 
-      {/* Bottom dashboard */}
+      {trackingError && (
+        <View style={styles.loadingOverlay}>
+          <View style={styles.loadingPill}>
+            <Text style={styles.loadingText}>{trackingError}</Text>
+          </View>
+        </View>
+      )}
+
       <View style={styles.dashboard}>
         <View style={styles.victimRow}>
           <View style={styles.avatarSmall}>
@@ -260,10 +357,10 @@ export default function HelperTrackingScreen({ navigation, route: navRoute }: Pr
           </View>
           <View style={styles.victimInfo}>
             <Text style={styles.victimName}>{victimName}</Text>
+            <Text style={styles.victimMeta}>{incidentType}</Text>
           </View>
         </View>
 
-        {/* Travel mode toggle */}
         <View style={styles.modeToggle}>
           <TouchableOpacity
             style={[styles.modeButton, travelMode === 'DRIVE' && styles.modeButtonActive]}
@@ -271,9 +368,7 @@ export default function HelperTrackingScreen({ navigation, route: navRoute }: Pr
             activeOpacity={0.8}
           >
             <Car color={travelMode === 'DRIVE' ? '#FFF' : '#6B7280'} size={16} />
-            <Text style={[styles.modeButtonText, travelMode === 'DRIVE' && styles.modeButtonTextActive]}>
-              Drive
-            </Text>
+            <Text style={[styles.modeButtonText, travelMode === 'DRIVE' && styles.modeButtonTextActive]}>Drive</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.modeButton, travelMode === 'WALK' && styles.modeButtonActive]}
@@ -281,9 +376,7 @@ export default function HelperTrackingScreen({ navigation, route: navRoute }: Pr
             activeOpacity={0.8}
           >
             <PersonStanding color={travelMode === 'WALK' ? '#FFF' : '#6B7280'} size={16} />
-            <Text style={[styles.modeButtonText, travelMode === 'WALK' && styles.modeButtonTextActive]}>
-              Walk
-            </Text>
+            <Text style={[styles.modeButtonText, travelMode === 'WALK' && styles.modeButtonTextActive]}>Walk</Text>
           </TouchableOpacity>
         </View>
 
@@ -302,7 +395,7 @@ export default function HelperTrackingScreen({ navigation, route: navRoute }: Pr
           <View style={styles.statDivider} />
           <View style={styles.statItem}>
             <Navigation color="#6B7280" size={16} />
-            <Text style={styles.statValue}>{formatElapsed()}</Text>
+            <Text style={styles.statValue}>{formatElapsed(elapsedSeconds)}</Text>
             <Text style={styles.statLabel}>Elapsed</Text>
           </View>
         </View>
@@ -317,11 +410,11 @@ export default function HelperTrackingScreen({ navigation, route: navRoute }: Pr
               onChangeText={setNotes}
               multiline
             />
-            <TouchableOpacity style={styles.helpedButton} activeOpacity={0.8} onPress={handleHelped}>
+            <TouchableOpacity style={styles.helpedButton} activeOpacity={0.8} onPress={() => handleCompleted('helped')}>
               <CheckCircle color="#FFF" size={20} />
               <Text style={styles.helpedButtonText}>Helped</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.cannotHandleButton} activeOpacity={0.8} onPress={handleCannotHandle}>
+            <TouchableOpacity style={styles.cannotHandleButton} activeOpacity={0.8} onPress={() => handleCompleted('cannot_handle')}>
               <XCircle color="#EA580C" size={20} />
               <Text style={styles.cannotHandleButtonText}>Cannot Handle</Text>
             </TouchableOpacity>
@@ -337,10 +430,15 @@ export default function HelperTrackingScreen({ navigation, route: navRoute }: Pr
   );
 }
 
+function formatElapsed(elapsedSeconds: number) {
+  const minutes = Math.floor(elapsedSeconds / 60);
+  const seconds = elapsedSeconds % 60;
+  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+}
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#FFF' },
   map: { width, height: Dimensions.get('window').height },
-
   loadingOverlay: {
     position: 'absolute',
     top: Platform.OS === 'ios' ? 110 : 90,
@@ -365,7 +463,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#2563EB',
   },
-
   dashboard: {
     position: 'absolute',
     bottom: 0,
@@ -383,7 +480,24 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 10,
   },
-
+  victimRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  avatarSmall: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#DC2626',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  avatarText: { color: '#FFF', fontWeight: '800' },
+  victimInfo: { flex: 1 },
+  victimName: { fontSize: 18, fontWeight: '800', color: '#111827' },
+  victimMeta: { fontSize: 13, color: '#6B7280', marginTop: 2 },
   modeToggle: {
     flexDirection: 'row',
     backgroundColor: '#F3F4F6',
@@ -398,146 +512,59 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 6,
     paddingVertical: 8,
-    borderRadius: 9,
+    borderRadius: 10,
   },
-  modeButtonActive: {
-    backgroundColor: '#2563EB',
-    shadowColor: '#2563EB',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  modeButtonText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#6B7280',
-  },
-  modeButtonTextActive: {
-    color: '#FFF',
-  },
-  victimRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  avatarSmall: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#374151',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  avatarText: {
-    color: '#FFF',
-    fontSize: 18,
-    fontWeight: '800',
-  },
-  victimInfo: { flex: 1 },
-  victimName: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#111827',
-    marginBottom: 4,
-  },
+  modeButtonActive: { backgroundColor: '#2563EB' },
+  modeButtonText: { color: '#6B7280', fontWeight: '700' },
+  modeButtonTextActive: { color: '#FFF' },
   statsRow: {
     flexDirection: 'row',
-    backgroundColor: '#F9FAFB',
-    borderRadius: 14,
-    paddingVertical: 14,
-    marginBottom: 16,
-    alignItems: 'center',
+    alignItems: 'stretch',
+    justifyContent: 'space-between',
+    marginBottom: 14,
   },
-  statItem: {
-    flex: 1,
-    alignItems: 'center',
-    gap: 2,
-  },
-  statValue: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: '#111827',
-    marginTop: 2,
-  },
-  statLabel: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#9CA3AF',
-  },
-  statDivider: {
-    width: 1,
-    height: 36,
-    backgroundColor: '#E5E7EB',
-  },
-
-  resolutionContainer: {
-    marginBottom: 12,
-    gap: 10,
-  },
+  statItem: { flex: 1, alignItems: 'center', gap: 4 },
+  statDivider: { width: 1, backgroundColor: '#E5E7EB', marginHorizontal: 8 },
+  statValue: { fontSize: 16, fontWeight: '800', color: '#111827' },
+  statLabel: { fontSize: 12, color: '#6B7280' },
+  resolutionContainer: { marginBottom: 12 },
   notesInput: {
-    backgroundColor: '#F9FAFB',
-    borderRadius: 12,
+    minHeight: 74,
+    borderRadius: 14,
     borderWidth: 1,
     borderColor: '#E5E7EB',
     paddingHorizontal: 14,
     paddingVertical: 12,
-    fontSize: 14,
-    fontWeight: '500',
+    marginBottom: 12,
     color: '#111827',
-    minHeight: 48,
-    maxHeight: 80,
-    textAlignVertical: 'top',
   },
   helpedButton: {
     flexDirection: 'row',
-    backgroundColor: '#16A34A',
-    paddingVertical: 16,
-    borderRadius: 14,
-    justifyContent: 'center',
     alignItems: 'center',
-    gap: 10,
-    shadowColor: '#16A34A',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-    elevation: 4,
+    justifyContent: 'center',
+    backgroundColor: '#16A34A',
+    borderRadius: 14,
+    paddingVertical: 14,
+    gap: 8,
+    marginBottom: 10,
   },
-  helpedButtonText: {
-    color: '#FFF',
-    fontSize: 17,
-    fontWeight: '800',
-  },
+  helpedButtonText: { color: '#FFF', fontWeight: '800', fontSize: 15 },
   cannotHandleButton: {
     flexDirection: 'row',
-    backgroundColor: '#FFF',
-    paddingVertical: 14,
-    borderRadius: 14,
-    justifyContent: 'center',
     alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 14,
+    paddingVertical: 14,
     gap: 8,
-    borderWidth: 1.5,
-    borderColor: '#EA580C',
+    backgroundColor: '#FFF7ED',
   },
-  cannotHandleButtonText: {
-    color: '#EA580C',
-    fontSize: 15,
-    fontWeight: '700',
-  },
-
+  cannotHandleButtonText: { color: '#EA580C', fontWeight: '800', fontSize: 15 },
   abortButton: {
     flexDirection: 'row',
-    backgroundColor: '#F3F4F6',
-    paddingVertical: 14,
-    borderRadius: 12,
-    justifyContent: 'center',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: 8,
+    paddingVertical: 12,
   },
-  abortButtonText: {
-    color: '#6B7280',
-    fontSize: 15,
-    fontWeight: '700',
-  },
+  abortButtonText: { color: '#6B7280', fontWeight: '700' },
 });

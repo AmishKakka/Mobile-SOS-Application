@@ -1,36 +1,42 @@
-/**
- * socketService.ts
- * Manages the single Socket.IO connection to the SafeGuard backend.
- * Keeps the socket as a singleton so it's shared across the app.
- */
-
 import { io, Socket } from 'socket.io-client';
-
-// ── Point this at your backend ───────────────────────────────────────────────
-// Local dev  : 'http://localhost:3000'   (backend running locally / docker)
-// Use your device IP address instead of "localhost" using -> ipconfig getifaddr en0
-// Production : your ALB DNS from terraform output
-const BACKEND_URL = 'http://10.0.2.2:3000';
+import { SOCKET_URL } from '../config/keys';
 
 let socket: Socket | null = null;
 
 export function getSocket(): Socket {
   if (!socket) {
-    socket = io(BACKEND_URL, {
+    socket = io(SOCKET_URL, {
       transports: ['websocket'],
       reconnection: true,
-      reconnectionAttempts: 10,
+      reconnectionAttempts: 20,
       reconnectionDelay: 1000,
+      autoConnect: true,
     });
 
-    socket.on('connect', () =>
-      console.log('[Socket] Connected to backend:', socket?.id),
-    );
-    socket.on('disconnect', (reason) =>
-      console.log('[Socket] Disconnected:', reason),
-    );
+    socket.on('connect', () => {
+      console.log('[Socket] Connected:', socket?.id);
+    });
+
+    socket.on('disconnect', (reason) => {
+      console.log('[Socket] Disconnected:', reason);
+    });
   }
+
   return socket;
+}
+
+export function registerSocketUser(userId: string, role: string, name?: string) {
+  const activeSocket = getSocket();
+
+  const emitRegistration = () => {
+    activeSocket.emit('register_user', { userId, role, name });
+  };
+
+  if (activeSocket.connected) {
+    emitRegistration();
+  } else {
+    activeSocket.once('connect', emitRegistration);
+  }
 }
 
 export function disconnectSocket() {

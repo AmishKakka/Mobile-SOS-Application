@@ -1,13 +1,14 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  SafeAreaView,
-  TouchableOpacity,
+  Alert,
   Animated,
   Dimensions,
   Platform,
+  SafeAreaView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import MapView, { Marker } from 'react-native-maps';
 import { AlertTriangle, MapPin, User, X, Check } from 'lucide-react-native';
@@ -16,13 +17,19 @@ import type { ParamListBase } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
 
+import { getOrCreateDemoSession } from '../../services/demoSession';
+import { getHelperModeState } from '../../services/helperMode';
+import { registerSocketUser, getSocket } from '../../services/socketService';
+
 const { width } = Dimensions.get('window');
 
 type SOSParams = {
+  roomId: string;
+  victimUserId: string;
   victimName: string;
-  victimLocation: { latitude: number; longitude: number };
-  distance: string;
-  incidentType: string;
+  victimLocation: { lat: number; lng: number };
+  helperDistanceMeters?: number;
+  incidentType?: string;
 };
 
 type Props = {
@@ -30,19 +37,47 @@ type Props = {
   route: RouteProp<{ params: SOSParams }, 'params'>;
 };
 
+function formatDistance(distanceMeters?: number) {
+  if (distanceMeters === undefined) {
+    return 'Nearby';
+  }
+  if (distanceMeters < 1000) {
+    return `${Math.round(distanceMeters)} m`;
+  }
+  return `${(distanceMeters / 1000).toFixed(2)} km`;
+}
+
 export default function HelperSOSNotificationScreen({ navigation, route }: Props) {
   const {
-    victimName = 'Sarah M.',
-    victimLocation = { latitude: 33.4152, longitude: -111.9263 },
-    distance = '0.8 km',
-    incidentType = 'Medical Emergency',
-  } = route.params ?? {};
+    roomId,
+    victimName,
+    victimLocation,
+    helperDistanceMeters,
+    incidentType = 'Emergency',
+  } = route.params;
 
+  const [helperSession, setHelperSession] = useState<{ userId: string; name: string } | null>(null);
+  const [isAccepting, setIsAccepting] = useState(false);
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(60)).current;
 
   useEffect(() => {
+    Promise.all([getOrCreateDemoSession('victim', 'SafeGuard User'), getHelperModeState()]).then(([session, helperMode]) => {
+      if (!session || !helperMode.isAvailable) {
+        Alert.alert('Helper mode inactive', 'This device is not currently acting as a helper.', [
+          {
+            text: 'OK',
+            onPress: () => navigation.replace('HelperDashboard'),
+          },
+        ]);
+        return;
+      }
+
+      setHelperSession(session);
+      registerSocketUser(session.userId, 'victim', session.name);
+    });
+
     Animated.loop(
       Animated.sequence([
         Animated.timing(pulseAnim, { toValue: 1.15, duration: 600, useNativeDriver: true }),
@@ -54,33 +89,68 @@ export default function HelperSOSNotificationScreen({ navigation, route }: Props
       Animated.timing(fadeAnim, { toValue: 1, duration: 400, useNativeDriver: true }),
       Animated.timing(slideAnim, { toValue: 0, duration: 400, useNativeDriver: true }),
     ]).start();
-  }, []);
+  }, [fadeAnim, navigation, pulseAnim, slideAnim]);
 
   const handleAccept = () => {
-    navigation.replace('HelperTracking', {
-      victimName,
-      victimLocation,
-      distance,
-      incidentType,
-    });
+    if (!helperSession || isAccepting) {
+      return;
+    }
+
+    setIsAccepting(true);
+    const socket = getSocket();
+    socket.emit(
+      'helper_accept',
+      {
+        roomId,
+        helperId: helperSession.userId,
+        helperName: helperSession.name,
+      },
+      (response: any) => {
+        setIsAccepting(false);
+
+        if (!response?.ok) {
+          Alert.alert(
+            'Unable to accept incident',
+            response?.message || 'This SOS is no longer available.',
+          );
+          return;
+        }
+
+        navigation.replace('HelperTracking', {
+          roomId,
+          helperId: helperSession.userId,
+          helperName: helperSession.name,
+          victimName,
+          victimLocation: {
+            latitude: victimLocation.lat,
+            longitude: victimLocation.lng,
+          },
+          incidentType: response.incidentType || incidentType,
+        });
+      },
+    );
   };
 
   const handleReject = () => {
-    navigation.goBack();
+    if (helperSession) {
+      getSocket().emit('helper_reject', {
+        roomId,
+        helperId: helperSession.userId,
+      });
+    }
+    navigation.replace('HelperDashboard');
   };
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Urgency header */}
       <View style={styles.header}>
-        <Animated.View style={[styles.alertIconCircle, { transform: [{ scale: pulseAnim }] }]}>
+        <Animated.View style={[styles.alertIconCircle, { transform: [{ scale: pulseAnim }] }]}> 
           <AlertTriangle color="#FFF" size={32} />
         </Animated.View>
-        <Text style={styles.headerTitle}>EMERGENCY SOS</Text>
-        <Text style={styles.headerSub}>Someone nearby needs your help</Text>
+        <Text style={styles.headerTitle}>SOS ALERT</Text>
+        <Text style={styles.headerSub}>This alert is live. Stop pretending it is a test flow.</Text>
       </View>
 
-      {/* Victim info card */}
       <Animated.View style={[styles.card, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
         <View style={styles.victimRow}>
           <View style={styles.avatarCircle}>
@@ -90,59 +160,57 @@ export default function HelperSOSNotificationScreen({ navigation, route }: Props
             <Text style={styles.victimName}>{victimName}</Text>
             <View style={styles.badgeRow}>
               <View style={styles.badge}>
-                <AlertTriangle color="#DC2626" size={12} />
-                <Text style={styles.badgeText}>{incidentType}</Text>
+                <MapPin color="#DC2626" size={14} />
+                <Text style={styles.badgeText}>{formatDistance(helperDistanceMeters)}</Text>
               </View>
             </View>
           </View>
         </View>
 
-        <View style={styles.detailsRow}>
-          <View style={styles.detailItem}>
-            <MapPin color="#6B7280" size={16} />
-            <Text style={styles.detailText}>{distance} away</Text>
-          </View>
+        <View style={styles.infoRow}>
+          <Text style={styles.infoLabel}>Incident</Text>
+          <Text style={styles.infoValue}>{incidentType}</Text>
+        </View>
+        <View style={styles.infoRow}>
+          <Text style={styles.infoLabel}>Room</Text>
+          <Text style={styles.infoValue}>{roomId}</Text>
+        </View>
+
+        <View style={styles.mapWrap}>
+          <MapView
+            style={styles.map}
+            pointerEvents="none"
+            initialRegion={{
+              latitude: victimLocation.lat,
+              longitude: victimLocation.lng,
+              latitudeDelta: 0.012,
+              longitudeDelta: 0.012,
+            }}
+          >
+            <Marker
+              coordinate={{ latitude: victimLocation.lat, longitude: victimLocation.lng }}
+              pinColor="#DC2626"
+              title={victimName}
+              description="Victim live location"
+            />
+          </MapView>
         </View>
       </Animated.View>
 
-      {/* Map preview */}
-      <Animated.View style={[styles.mapContainer, { opacity: fadeAnim }]}>
-        <MapView
-          style={styles.map}
-          initialRegion={{
-            ...victimLocation,
-            latitudeDelta: 0.012,
-            longitudeDelta: 0.012,
-          }}
-          scrollEnabled={false}
-          zoomEnabled={false}
-          rotateEnabled={false}
-          pitchEnabled={false}
-        >
-          <Marker coordinate={victimLocation} pinColor="#DC2626" />
-        </MapView>
-        <View style={styles.mapOverlayLabel}>
-          <MapPin color="#DC2626" size={14} />
-          <Text style={styles.mapOverlayText}>Victim Location</Text>
-        </View>
-      </Animated.View>
-
-      {/* Action buttons */}
-      <View style={styles.buttonContainer}>
+      <View style={styles.actionsContainer}>
         <TouchableOpacity
-          style={styles.acceptButton}
+          style={[styles.acceptButton, isAccepting && styles.acceptButtonDisabled]}
           activeOpacity={0.8}
           onPress={handleAccept}
+          disabled={isAccepting}
         >
           <Check color="#FFF" size={22} />
-          <Text style={styles.acceptButtonText}>Accept & Respond</Text>
+          <Text style={styles.acceptButtonText}>
+            {isAccepting ? 'Confirming...' : 'Accept & Respond'}
+          </Text>
         </TouchableOpacity>
 
-        <TouchableOpacity
-          style={styles.rejectButton}
-          activeOpacity={0.8}
-          onPress={handleReject}
-        >
+        <TouchableOpacity style={styles.rejectButton} activeOpacity={0.8} onPress={handleReject}>
           <X color="#6B7280" size={20} />
           <Text style={styles.rejectButtonText}>Decline</Text>
         </TouchableOpacity>
@@ -157,7 +225,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFF',
     paddingTop: Platform.OS === 'android' ? 40 : 0,
   },
-
   header: {
     alignItems: 'center',
     paddingTop: 24,
@@ -189,7 +256,6 @@ const styles = StyleSheet.create({
     color: '#6B7280',
     fontWeight: '500',
   },
-
   card: {
     marginHorizontal: 20,
     backgroundColor: '#FFF',
@@ -239,98 +305,69 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   badgeText: {
-    fontSize: 12,
-    fontWeight: '700',
     color: '#DC2626',
+    fontWeight: '700',
+    fontSize: 12,
   },
-  detailsRow: {
+  infoRow: {
     flexDirection: 'row',
-    gap: 24,
+    justifyContent: 'space-between',
+    marginBottom: 10,
   },
-  detailItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  detailText: {
-    fontSize: 14,
+  infoLabel: {
     color: '#6B7280',
-    fontWeight: '600',
+    fontSize: 13,
   },
-
-  mapContainer: {
-    marginHorizontal: 20,
-    marginTop: 16,
-    borderRadius: 16,
+  infoValue: {
+    color: '#111827',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  mapWrap: {
+    width: '100%',
+    height: 220,
+    borderRadius: 14,
     overflow: 'hidden',
-    height: 180,
-    borderWidth: 1,
-    borderColor: '#F3F4F6',
+    marginTop: 8,
   },
   map: {
-    ...StyleSheet.absoluteFillObject,
+    width: width - 80,
+    height: 220,
   },
-  mapOverlayLabel: {
-    position: 'absolute',
-    top: 12,
-    left: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.95)',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
-    gap: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  mapOverlayText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#DC2626',
-  },
-
-  buttonContainer: {
-    flex: 1,
-    justifyContent: 'flex-end',
+  actionsContainer: {
     paddingHorizontal: 20,
-    paddingBottom: Platform.OS === 'ios' ? 20 : 30,
-    gap: 12,
+    marginTop: 20,
   },
   acceptButton: {
     flexDirection: 'row',
-    backgroundColor: '#16A34A',
-    paddingVertical: 18,
-    borderRadius: 14,
-    justifyContent: 'center',
     alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#16A34A',
+    paddingVertical: 16,
+    borderRadius: 14,
     gap: 10,
-    shadowColor: '#16A34A',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 6,
+    marginBottom: 12,
+  },
+  acceptButtonDisabled: {
+    opacity: 0.72,
   },
   acceptButtonText: {
     color: '#FFF',
-    fontSize: 18,
     fontWeight: '800',
+    fontSize: 16,
   },
   rejectButton: {
     flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: '#F3F4F6',
     paddingVertical: 16,
     borderRadius: 14,
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 8,
+    gap: 10,
   },
   rejectButtonText: {
     color: '#6B7280',
-    fontSize: 16,
     fontWeight: '700',
+    fontSize: 15,
   },
 });

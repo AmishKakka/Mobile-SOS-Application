@@ -1,32 +1,67 @@
 import { PermissionsAndroid, Platform } from 'react-native';
 import Geolocation from 'react-native-geolocation-service';
 
-export async function requestLocationPermission() {
+export async function requestForegroundLocationPermission() {
   if (Platform.OS === 'android') {
     try {
-      const granted = await PermissionsAndroid.request(
+      const result = await PermissionsAndroid.requestMultiple([
+        PermissionsAndroid.PERMISSIONS.ACCESS_COARSE_LOCATION,
         PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
-        {
-          title: 'SafeGuard Location Permission',
-          message: 'SafeGuard needs access to your GPS to route helpers to you in an emergency.',
-          buttonPositive: 'Allow',
-        },
-      );
-      if (granted === PermissionsAndroid.RESULTS.GRANTED) {
-        console.log('✅ [LOCATION] Permission granted by user');
-        return true;
-      } else {
-        console.warn('❌ [LOCATION] Permission denied by user');
-        return false;
-      }
-    } catch (err) {
-      console.warn(err);
+      ]);
+
+      const coarseGranted =
+        result[PermissionsAndroid.PERMISSIONS.ACCESS_COARSE_LOCATION] ===
+        PermissionsAndroid.RESULTS.GRANTED;
+
+      const fineGranted =
+        result[PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION] ===
+        PermissionsAndroid.RESULTS.GRANTED;
+
+      return coarseGranted || fineGranted;
+    } catch (error) {
+      console.warn('[Permissions] Android foreground location request failed:', error);
       return false;
     }
-  } else if (Platform.OS === 'ios') {
-    // iOS handles the popup automatically when you call requestAuthorization
-    const auth = await Geolocation.requestAuthorization('whenInUse');
-    console.log(`[LOCATION] iOS Auth status: ${auth}`);
+  }
+
+  const auth = await Geolocation.requestAuthorization('whenInUse');
+  return auth === 'granted';
+}
+
+export async function requestBackgroundLocationPermission() {
+  if (Platform.OS !== 'android') {
+    const auth = await Geolocation.requestAuthorization('always');
     return auth === 'granted';
   }
+
+  if (Platform.Version < 29) {
+    return true;
+  }
+
+  try {
+    const granted = await PermissionsAndroid.request(
+      PermissionsAndroid.PERMISSIONS.ACCESS_BACKGROUND_LOCATION,
+      {
+        title: 'Allow background location',
+        message:
+          'SafeGuard uses background location to keep helpers discoverable during emergencies.',
+        buttonPositive: 'Allow',
+      },
+    );
+
+    return granted === PermissionsAndroid.RESULTS.GRANTED;
+  } catch (error) {
+    console.warn('[Permissions] Android background location request failed:', error);
+    return false;
+  }
+}
+
+export async function requestLocationPermissionsForTracking() {
+  const foregroundGranted = await requestForegroundLocationPermission();
+  if (!foregroundGranted) {
+    return false;
+  }
+
+  const backgroundGranted = await requestBackgroundLocationPermission();
+  return backgroundGranted;
 }
