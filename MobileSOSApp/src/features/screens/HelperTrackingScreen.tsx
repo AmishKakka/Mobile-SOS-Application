@@ -107,7 +107,7 @@ export default function HelperTrackingScreen({ navigation, route: navRoute }: Pr
     const onCancelled = (payload: any) => {
       if (payload.roomId === roomId) {
         Alert.alert('SOS Closed', payload.message || 'This incident has been closed.');
-        navigation.replace('HelperDashboard');
+        navigation.popTo('MainDashboard');
       }
     };
 
@@ -300,7 +300,7 @@ export default function HelperTrackingScreen({ navigation, route: navRoute }: Pr
               helperId,
               reason: 'Helper manually aborted the response.',
             });
-            navigation.replace('HelperDashboard');
+            navigation.popTo('MainDashboard');
           },
         },
       ],

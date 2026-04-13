@@ -138,7 +138,7 @@ export default function HelperSOSNotificationScreen({ navigation, route }: Props
         helperId: helperSession.userId,
       });
     }
-    navigation.replace('HelperDashboard');
+    navigation.popTo('MainDashboard');
   };
 
   return (

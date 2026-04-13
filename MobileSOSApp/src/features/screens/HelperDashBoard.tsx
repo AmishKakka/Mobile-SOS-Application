@@ -59,7 +59,7 @@ const HelperDashboardScreen: React.FC<HelperDashboardScreenProps> = ({ navigatio
           <Text style={styles.subtitle}>Ready to make a difference in your community</Text>
         </View>
 
-        <View style={[styles.card, styles.shadow]}>
+        {/* <View style={[styles.card, styles.shadow]}>
           <Text style={styles.cardTitle}>
             {isAvailable ? 'Community Availability Is On' : 'Community Availability Is Off'}
           </Text>
@@ -74,7 +74,7 @@ const HelperDashboardScreen: React.FC<HelperDashboardScreenProps> = ({ navigatio
           >
             <Text style={styles.settingsButtonText}>Manage Availability In Settings</Text>
           </TouchableOpacity>
-        </View>
+        </View> */}
 
         <InfoCard
           icon={<Users color="#374151" size={20} />}

@@ -55,17 +55,10 @@ export default function SOSCompletionScreen({ navigation, route }: Props) {
         useNativeDriver: true,
       }),
     ]).start();
-  }, []);
+  }, [fadeAnim, scaleAnim]);
 
   const handleDone = () => {
-    navigation.reset({
-      index: 2,
-      routes: [
-        { name: 'AuthScreen' },
-        { name: 'MainDashboard' },
-        { name: 'HelperDashboard' },
-      ],
-    });
+    navigation.popTo('MainDashboard');
   };
 
   return (

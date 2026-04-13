@@ -106,7 +106,7 @@ export async function setCommunityAvailability(
     return {
       session,
       isAvailable: false,
-      statusText: 'Community availability is off.',
+      statusText: 'Sorry! I am not available to help.',
     };
   }
 
@@ -133,6 +133,6 @@ export async function setCommunityAvailability(
   return {
     session,
     isAvailable: true,
-    statusText: 'Community availability is on. Nearby SOS requests can reach you.',
+    statusText: 'Community availability is on.',
   };
 }
