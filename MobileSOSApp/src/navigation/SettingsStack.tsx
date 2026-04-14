@@ -1,6 +1,8 @@
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import React from 'react';
 import AuthScreen from '../features/auth/AuthScreen';
+import GetStartedScreen from '../features/auth/GetStartedScreen';
+import LocationAccessScreen from '../features/auth/LocationAccessScreen';
 import EditProfileScreen from '../features/screens/EditProfileScreen';
 import EmergencyContactsScreen from '../features/screens/EmergencyContactsScreen';
 import MedicalProfileScreen from '../features/screens/MedicalProfileScreen';
@@ -17,7 +19,7 @@ const Stack = createNativeStackNavigator();
 const SettingsStack = () => {
   return (
     <Stack.Navigator
-      initialRouteName="AuthScreen"
+      initialRouteName="GetStarted"
       screenOptions={{
         headerStyle: { backgroundColor: '#fff' },
         headerTintColor: '#0f172a',
@@ -25,6 +27,8 @@ const SettingsStack = () => {
         headerShadowVisible: true,
       }}
     >
+      <Stack.Screen name="GetStarted" component={GetStartedScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="LocationAccess" component={LocationAccessScreen} options={{ headerShown: false }} />
       <Stack.Screen name="AuthScreen" component={AuthScreen} options={{ headerShown: false }} />
       <Stack.Screen name="MainDashboard" component={MainDashboard} options={{ headerShown: false }} />
       <Stack.Screen name="SettingsHome" component={SettingsScreen} options={{ title: 'Settings' }} />

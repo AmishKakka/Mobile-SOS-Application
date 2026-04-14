@@ -160,7 +160,8 @@ module.exports = function initializeSocket(server, redisClient, pubClient, subCl
           currentVictimLocation: victimLocation,
           currentSearchRing: -1,
           currentSosTimeoutId: null,
-          assignedHelperId: null,
+          assignedHelperIds: [],
+          currentBatchHelperIds: [],
           redisNotifiedKey,
         });
 
@@ -212,22 +213,30 @@ module.exports = function initializeSocket(server, redisClient, pubClient, subCl
         return;
       }
 
-      if (state.assignedHelperId && state.assignedHelperId !== helperId) {
-        socket.emit('incident_taken', { roomId, helperId: state.assignedHelperId });
+      if (state.assignedHelperIds.includes(helperId)) {
         ack({
-          ok: false,
-          code: 'INCIDENT_TAKEN',
-          helperId: state.assignedHelperId,
-          message: 'Another helper already accepted this incident.',
+          ok: true,
+          roomId,
+          victimUserId: state.victimUserId,
+          victimLocation: state.currentVictimLocation,
+          incidentType: 'Emergency',
         });
         return;
       }
 
-      state.assignedHelperId = helperId;
-      if (state.currentSosTimeoutId) {
-        clearTimeout(state.currentSosTimeoutId);
-        state.currentSosTimeoutId = null;
-      }
+      // if (
+      //   !state.currentBatchHelperIds.includes(helperId)
+      //   || !state.currentSosTimeoutId
+      // ) {
+      //   ack({
+      //     ok: false,
+      //     code: 'INCIDENT_CLOSED',
+      //     message: 'This SOS is no longer accepting new helper responses.',
+      //   });
+      //   return;
+      // }
+
+      state.assignedHelperIds.push(helperId);
 
       socket.join(roomId);
       socket.data.activeRoomId = roomId;
@@ -244,7 +253,12 @@ module.exports = function initializeSocket(server, redisClient, pubClient, subCl
         roomId,
         helperId,
         helperName: helperName || helperId,
-        message: 'A helper accepted your SOS and is on the way.',
+        acceptedHelperIds: state.assignedHelperIds,
+        acceptedCount: state.assignedHelperIds.length,
+        message:
+          state.assignedHelperIds.length > 1
+            ? `${state.assignedHelperIds.length} helpers accepted your SOS and are on the way.`
+            : 'A helper accepted your SOS and is on the way.',
       });
     });
 
@@ -296,26 +310,48 @@ module.exports = function initializeSocket(server, redisClient, pubClient, subCl
 
     socket.on('helper_response_cancelled', async ({ roomId, helperId, reason } = {}) => {
       const state = activeEmergencyRooms.get(roomId);
-      if (!state || state.assignedHelperId !== helperId) {
+      if (!state || !state.assignedHelperIds.includes(helperId)) {
         return;
       }
 
-      state.assignedHelperId = null;
+      state.assignedHelperIds = state.assignedHelperIds.filter((id) => id !== helperId);
       socket.leave(roomId);
 
       io.to(`user:${state.victimUserId}`).emit('helper_response_cancelled', {
         roomId,
         helperId,
+        acceptedHelperIds: state.assignedHelperIds,
         reason: reason || 'The helper stopped responding.',
       });
 
       await redisClient.sadd(state.redisNotifiedKey, String(helperId));
-      await startAutomatedDispatchLoop(io, redisClient, roomId);
+
+      if (state.assignedHelperIds.length === 0 && !state.currentSosTimeoutId) {
+        await startAutomatedDispatchLoop(io, redisClient, roomId);
+      }
     });
 
     socket.on('helper_response_completed', async ({ roomId, helperId, outcome, notes } = {}) => {
       const state = activeEmergencyRooms.get(roomId);
-      if (!state || state.assignedHelperId !== helperId) {
+      if (!state || !state.assignedHelperIds.includes(helperId)) {
+        return;
+      }
+
+      if (outcome === 'cannot_handle') {
+        state.assignedHelperIds = state.assignedHelperIds.filter((id) => id !== helperId);
+
+        io.to(`user:${state.victimUserId}`).emit('helper_response_cancelled', {
+          roomId,
+          helperId,
+          acceptedHelperIds: state.assignedHelperIds,
+          reason: notes || 'A helper could not handle this incident.',
+        });
+
+        await redisClient.sadd(state.redisNotifiedKey, String(helperId));
+
+        if (state.assignedHelperIds.length === 0 && !state.currentSosTimeoutId) {
+          await startAutomatedDispatchLoop(io, redisClient, roomId);
+        }
         return;
       }
 
@@ -350,15 +386,18 @@ module.exports = function initializeSocket(server, redisClient, pubClient, subCl
 
       if (activeRoomId && activeEmergencyRooms.has(activeRoomId)) {
         const state = activeEmergencyRooms.get(activeRoomId);
-        if (state && state.assignedHelperId === userId) {
-          state.assignedHelperId = null;
+        if (state && state.assignedHelperIds.includes(userId)) {
+          state.assignedHelperIds = state.assignedHelperIds.filter((id) => id !== userId);
           io.to(`user:${state.victimUserId}`).emit('helper_response_cancelled', {
             roomId: activeRoomId,
             helperId: userId,
+            acceptedHelperIds: state.assignedHelperIds,
             reason: 'Assigned helper disconnected.',
           });
           await redisClient.sadd(state.redisNotifiedKey, String(userId));
-          await startAutomatedDispatchLoop(io, redisClient, activeRoomId);
+          if (state.assignedHelperIds.length === 0 && !state.currentSosTimeoutId) {
+            await startAutomatedDispatchLoop(io, redisClient, activeRoomId);
+          }
         }
       }
     });
@@ -387,46 +426,9 @@ async function upsertLiveLocation(redisClient, userId, location) {
   await pipeline.exec();
 }
 
-function calculateDistanceMeters(lat1, lng1, lat2, lng2) {
-  const earthRadiusMeters = 6371e3;
-  const dLat = ((lat2 - lat1) * Math.PI) / 180;
-  const dLng = ((lng2 - lng1) * Math.PI) / 180;
-  const phi1 = (lat1 * Math.PI) / 180;
-  const phi2 = (lat2 * Math.PI) / 180;
-
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(phi1) * Math.cos(phi2) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-
-  return earthRadiusMeters * c;
-}
-
-function estimateRadiusForRing(location, ring) {
-  if (!isValidLocation(location) || ring <= 0) {
-    return 250;
-  }
-
-  const victimCell = h3.latLngToCell(Number(location.lat), Number(location.lng), H3_RESOLUTION);
-  const cells = h3.gridRing(victimCell, ring);
-  const sampleCell = cells[0];
-
-  if (!sampleCell) {
-    return 250;
-  }
-
-  const [victimLat, victimLng] = h3.cellToLatLng(victimCell);
-  const [ringLat, ringLng] = h3.cellToLatLng(sampleCell);
-
-  return Math.max(
-    250,
-    Math.round(calculateDistanceMeters(victimLat, victimLng, ringLat, ringLng) + 150),
-  );
-}
-
-function emitSearchProgress(io, state, ring) {
-  const radiusMeters = estimateRadiusForRing(state.currentVictimLocation, ring);
-
+function emitSearchProgress(io, state, searchMetadata) {
+  const ring = Number(searchMetadata?.searchedRing) || 0;
+  const radiusMeters = Number(searchMetadata?.radiusMeters) || 250;
   io.to(`user:${state.victimUserId}`).emit('dispatch_search_progress', {
     roomId: state.roomId,
     ring,
@@ -439,7 +441,7 @@ function emitSearchProgress(io, state, ring) {
     radiusMeters,
   });
 
-  if (ring >= MAX_SEARCH_RING) {
+  if (searchMetadata?.maxRadiusReached) {
     io.to(`user:${state.victimUserId}`).emit('max_radius_reached', {
       roomId: state.roomId,
       radiusMeters,
@@ -449,20 +451,27 @@ function emitSearchProgress(io, state, ring) {
 
 async function startAutomatedDispatchLoop(io, redisClient, roomId) {
   const state = activeEmergencyRooms.get(roomId);
-  if (!state || state.assignedHelperId) return;
+  if (!state || state.assignedHelperIds.length > 0) return;
 
   if (state.currentSosTimeoutId) {
     clearTimeout(state.currentSosTimeoutId);
     state.currentSosTimeoutId = null;
   }
 
+  state.currentBatchHelperIds = [];
+
   const { currentVictimLocation, redisNotifiedKey, victimUserId } = state;
   const alreadyNotified = await redisClient.smembers(redisNotifiedKey);
   let searchRing = Math.max(0, Number(state.currentSearchRing) || 0);
   let helpers = [];
+  let searchMetadata = {
+    searchedRing: searchRing,
+    radiusMeters: 250,
+    maxRadiusReached: false,
+  };
 
   while (true) {
-    helpers = await triggerSOS(
+    const searchResult = await triggerSOS(
       currentVictimLocation.lat,
       currentVictimLocation.lng,
       alreadyNotified,
@@ -474,15 +483,20 @@ async function startAutomatedDispatchLoop(io, redisClient, roomId) {
       }
     );
 
-    helpers = helpers.filter((helper) => helper.userId !== victimUserId);
-    state.currentSearchRing = searchRing;
-    emitSearchProgress(io, state, searchRing);
+    helpers = (searchResult.helpers || []).filter((helper) => helper.userId !== victimUserId);
+    searchMetadata = {
+      searchedRing: Number(searchResult.searchedRing) || 0,
+      radiusMeters: Number(searchResult.radiusMeters) || 250,
+      maxRadiusReached: Boolean(searchResult.maxRadiusReached),
+    };
+    state.currentSearchRing = searchMetadata.searchedRing;
+    emitSearchProgress(io, state, searchMetadata);
 
-    if (helpers.length >= NOTIFY_BATCH_SIZE || searchRing >= MAX_SEARCH_RING) {
+    if (helpers.length >= NOTIFY_BATCH_SIZE || searchMetadata.maxRadiusReached) {
       break;
     }
 
-    searchRing = Math.min(searchRing + SEARCH_RING_STEP, MAX_SEARCH_RING);
+    searchRing = Math.min(searchMetadata.searchedRing + SEARCH_RING_STEP, MAX_SEARCH_RING);
   }
 
   if (!helpers.length) {
@@ -493,6 +507,7 @@ async function startAutomatedDispatchLoop(io, redisClient, roomId) {
   const victim = await User.findById(victimUserId).select('name').lean();
   const batch = helpers.slice(0, NOTIFY_BATCH_SIZE);
   const helperIds = batch.map((helper) => helper.userId);
+  state.currentBatchHelperIds = helperIds;
 
   io.to(`user:${victimUserId}`).emit(`sos_helpers_${roomId}`, { roomId, helpers: batch });
 
@@ -518,6 +533,18 @@ async function startAutomatedDispatchLoop(io, redisClient, roomId) {
   }
 
   state.currentSosTimeoutId = setTimeout(() => {
+    const latestState = activeEmergencyRooms.get(roomId);
+    if (!latestState) {
+      return;
+    }
+
+    latestState.currentSosTimeoutId = null;
+    latestState.currentBatchHelperIds = [];
+
+    if (latestState.assignedHelperIds.length > 0) {
+      return;
+    }
+
     startAutomatedDispatchLoop(io, redisClient, roomId);
   }, DISPATCH_TIMEOUT_MS);
 }

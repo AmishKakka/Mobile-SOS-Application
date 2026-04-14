@@ -9,6 +9,7 @@ import {
   Platform,
   Alert,
   ActivityIndicator,
+  ScrollView,
 } from 'react-native';
 import MapView, { Marker, Polyline } from 'react-native-maps';
 import { Navigation, MapPin, Clock, X, CheckCircle, XCircle, Car, PersonStanding } from 'lucide-react-native';
@@ -23,7 +24,7 @@ import { GOOGLE_MAPS_API_KEY } from '../../config/keys';
 import { requestForegroundLocationPermission } from '../../services/permissions';
 import { getSocket, registerSocketUser } from '../../services/socketService';
 
-const { width } = Dimensions.get('window');
+const { width, height } = Dimensions.get('window');
 
 type TrackingParams = {
   roomId: string;
@@ -73,6 +74,11 @@ export default function HelperTrackingScreen({ navigation, route: navRoute }: Pr
   const [travelMode, setTravelMode] = useState<'DRIVE' | 'WALK'>('DRIVE');
   const mapRef = useRef<MapView>(null);
   const watchIdRef = useRef<number | null>(null);
+  const lastRouteRequestRef = useRef<{
+    helper: { latitude: number; longitude: number };
+    victim: { latitude: number; longitude: number };
+    travelMode: 'DRIVE' | 'WALK';
+  } | null>(null);
 
   const distKm = helperLocation ? haversineKm(helperLocation, victimLocation) : 0;
   const distDisplay = routeInfo
@@ -219,9 +225,22 @@ export default function HelperTrackingScreen({ navigation, route: navRoute }: Pr
       return;
     }
 
-    setIsLoadingRoute(true);
-    setRouteCoords(null);
-    setRouteInfo(null);
+    const lastRouteRequest = lastRouteRequestRef.current;
+    if (lastRouteRequest) {
+      const helperMoved = haversineKm(lastRouteRequest.helper, helperLocation) * 1000;
+      const victimMoved = haversineKm(lastRouteRequest.victim, victimLocation) * 1000;
+      if (
+        helperMoved < 20
+        && victimMoved < 20
+        && lastRouteRequest.travelMode === travelMode
+      ) {
+        return;
+      }
+    }
+
+    if (!routeCoords) {
+      setIsLoadingRoute(true);
+    }
 
     (async () => {
       const result = await fetchRoute(helperLocation, victimLocation, GOOGLE_MAPS_API_KEY, travelMode);
@@ -237,13 +256,18 @@ export default function HelperTrackingScreen({ navigation, route: navRoute }: Pr
           distanceText: result.distanceText,
           durationText: result.durationText,
         });
+        lastRouteRequestRef.current = {
+          helper: helperLocation,
+          victim: victimLocation,
+          travelMode,
+        };
       }
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [helperLocation, travelMode, victimLocation]);
+  }, [helperLocation, routeCoords, travelMode, victimLocation]);
 
   useEffect(() => {
     const timer = setInterval(() => setElapsedSeconds((seconds) => seconds + 1), 1000);
@@ -333,7 +357,7 @@ export default function HelperTrackingScreen({ navigation, route: navRoute }: Pr
         )}
       </MapView>
 
-      {((!helperLocation && !trackingError) || isLoadingRoute) && (
+      {((!helperLocation && !trackingError) || (isLoadingRoute && !routeCoords)) && (
         <View style={styles.loadingOverlay}>
           <View style={styles.loadingPill}>
             <ActivityIndicator size="small" color="#2563EB" />
@@ -350,81 +374,100 @@ export default function HelperTrackingScreen({ navigation, route: navRoute }: Pr
         </View>
       )}
 
-      <View style={styles.dashboard}>
-        <View style={styles.victimRow}>
-          <View style={styles.avatarSmall}>
-            <Text style={styles.avatarText}>{victimName.charAt(0)}</Text>
+      <View style={[styles.dashboard, hasReached ? styles.dashboardExpanded : styles.dashboardCompact]}>
+        <View style={styles.sheetHandle} />
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          bounces={false}
+          contentContainerStyle={styles.dashboardContent}
+        >
+          <View style={styles.responseHeader}>
+            <View style={styles.responseHeaderText}>
+              <Text style={styles.responseEyebrow}>LIVE RESPONSE</Text>
+              <Text style={styles.responseTitle}>Navigating to {victimName}</Text>
+            </View>
+            <View style={[styles.responseBadge, hasReached && styles.responseBadgeArrived]}>
+              <Text style={[styles.responseBadgeText, hasReached && styles.responseBadgeTextArrived]}>
+                {hasReached ? 'ARRIVED' : 'EN ROUTE'}
+              </Text>
+            </View>
           </View>
-          <View style={styles.victimInfo}>
-            <Text style={styles.victimName}>{victimName}</Text>
-            <Text style={styles.victimMeta}>{incidentType}</Text>
-          </View>
-        </View>
 
-        <View style={styles.modeToggle}>
-          <TouchableOpacity
-            style={[styles.modeButton, travelMode === 'DRIVE' && styles.modeButtonActive]}
-            onPress={() => setTravelMode('DRIVE')}
-            activeOpacity={0.8}
-          >
-            <Car color={travelMode === 'DRIVE' ? '#FFF' : '#6B7280'} size={16} />
-            <Text style={[styles.modeButtonText, travelMode === 'DRIVE' && styles.modeButtonTextActive]}>Drive</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.modeButton, travelMode === 'WALK' && styles.modeButtonActive]}
-            onPress={() => setTravelMode('WALK')}
-            activeOpacity={0.8}
-          >
-            <PersonStanding color={travelMode === 'WALK' ? '#FFF' : '#6B7280'} size={16} />
-            <Text style={[styles.modeButtonText, travelMode === 'WALK' && styles.modeButtonTextActive]}>Walk</Text>
-          </TouchableOpacity>
-        </View>
+          <View style={styles.victimRow}>
+            <View style={styles.avatarSmall}>
+              <Text style={styles.avatarText}>{victimName.charAt(0)}</Text>
+            </View>
+            <View style={styles.victimInfo}>
+              <Text style={styles.victimName}>{victimName}</Text>
+              <Text style={styles.victimMeta}>{incidentType}</Text>
+            </View>
+          </View>
 
-        <View style={styles.statsRow}>
-          <View style={styles.statItem}>
-            <MapPin color="#6B7280" size={16} />
-            <Text style={styles.statValue}>{distDisplay}</Text>
-            <Text style={styles.statLabel}>Distance</Text>
-          </View>
-          <View style={styles.statDivider} />
-          <View style={styles.statItem}>
-            <Clock color="#6B7280" size={16} />
-            <Text style={styles.statValue}>{etaDisplay}</Text>
-            <Text style={styles.statLabel}>ETA</Text>
-          </View>
-          <View style={styles.statDivider} />
-          <View style={styles.statItem}>
-            <Navigation color="#6B7280" size={16} />
-            <Text style={styles.statValue}>{formatElapsed(elapsedSeconds)}</Text>
-            <Text style={styles.statLabel}>Elapsed</Text>
-          </View>
-        </View>
-
-        {hasReached && (
-          <View style={styles.resolutionContainer}>
-            <TextInput
-              style={styles.notesInput}
-              placeholder="Add a note (optional)..."
-              placeholderTextColor="#9CA3AF"
-              value={notes}
-              onChangeText={setNotes}
-              multiline
-            />
-            <TouchableOpacity style={styles.helpedButton} activeOpacity={0.8} onPress={() => handleCompleted('helped')}>
-              <CheckCircle color="#FFF" size={20} />
-              <Text style={styles.helpedButtonText}>Helped</Text>
+          <View style={styles.modeToggle}>
+            <TouchableOpacity
+              style={[styles.modeButton, travelMode === 'DRIVE' && styles.modeButtonActive]}
+              onPress={() => setTravelMode('DRIVE')}
+              activeOpacity={0.8}
+            >
+              <Car color={travelMode === 'DRIVE' ? '#FFF' : '#6B7280'} size={16} />
+              <Text style={[styles.modeButtonText, travelMode === 'DRIVE' && styles.modeButtonTextActive]}>Drive</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.cannotHandleButton} activeOpacity={0.8} onPress={() => handleCompleted('cannot_handle')}>
-              <XCircle color="#EA580C" size={20} />
-              <Text style={styles.cannotHandleButtonText}>Cannot Handle</Text>
+            <TouchableOpacity
+              style={[styles.modeButton, travelMode === 'WALK' && styles.modeButtonActive]}
+              onPress={() => setTravelMode('WALK')}
+              activeOpacity={0.8}
+            >
+              <PersonStanding color={travelMode === 'WALK' ? '#FFF' : '#6B7280'} size={16} />
+              <Text style={[styles.modeButtonText, travelMode === 'WALK' && styles.modeButtonTextActive]}>Walk</Text>
             </TouchableOpacity>
           </View>
-        )}
 
-        <TouchableOpacity style={styles.abortButton} activeOpacity={0.8} onPress={handleAbort}>
-          <X color="#6B7280" size={18} />
-          <Text style={styles.abortButtonText}>Cancel</Text>
-        </TouchableOpacity>
+          <View style={styles.statsRow}>
+            <View style={styles.statItem}>
+              <MapPin color="#6B7280" size={15} />
+              <Text style={styles.statValue}>{distDisplay}</Text>
+              <Text style={styles.statLabel}>Distance</Text>
+            </View>
+            <View style={styles.statDivider} />
+            <View style={styles.statItem}>
+              <Clock color="#6B7280" size={15} />
+              <Text style={styles.statValue}>{etaDisplay}</Text>
+              <Text style={styles.statLabel}>ETA</Text>
+            </View>
+            <View style={styles.statDivider} />
+            <View style={styles.statItem}>
+              <Navigation color="#6B7280" size={15} />
+              <Text style={styles.statValue}>{formatElapsed(elapsedSeconds)}</Text>
+              <Text style={styles.statLabel}>Elapsed</Text>
+            </View>
+          </View>
+
+          {hasReached && (
+            <View style={styles.resolutionContainer}>
+              <TextInput
+                style={styles.notesInput}
+                placeholder="Add a note (optional)..."
+                placeholderTextColor="#9CA3AF"
+                value={notes}
+                onChangeText={setNotes}
+                multiline
+              />
+              <TouchableOpacity style={styles.helpedButton} activeOpacity={0.8} onPress={() => handleCompleted('helped')}>
+                <CheckCircle color="#FFF" size={20} />
+                <Text style={styles.helpedButtonText}>Helped</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.cannotHandleButton} activeOpacity={0.8} onPress={() => handleCompleted('cannot_handle')}>
+                <XCircle color="#EA580C" size={20} />
+                <Text style={styles.cannotHandleButtonText}>Cannot Handle</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          <TouchableOpacity style={styles.abortButton} activeOpacity={0.8} onPress={handleAbort}>
+            <X color="#6B7280" size={18} />
+            <Text style={styles.abortButtonText}>Cancel</Text>
+          </TouchableOpacity>
+        </ScrollView>
       </View>
     </View>
   );
@@ -468,42 +511,99 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: '#FFF',
-    paddingTop: 20,
+    backgroundColor: 'rgba(255,255,255,0.98)',
+    paddingTop: 12,
     paddingHorizontal: 20,
     paddingBottom: Platform.OS === 'ios' ? 36 : 24,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    shadowColor: '#111827',
+    shadowOffset: { width: 0, height: -8 },
+    shadowOpacity: 0.14,
+    shadowRadius: 18,
     elevation: 10,
+  },
+  dashboardCompact: {
+    maxHeight: height * 0.3,
+  },
+  dashboardExpanded: {
+    maxHeight: height * 0.52,
+  },
+  dashboardContent: {
+    paddingBottom: 4,
+  },
+  sheetHandle: {
+    width: 42,
+    height: 5,
+    borderRadius: 999,
+    backgroundColor: '#D1D5DB',
+    alignSelf: 'center',
+    marginBottom: 10,
+  },
+  responseHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 10,
+  },
+  responseHeaderText: {
+    flex: 1,
+    paddingRight: 12,
+  },
+  responseEyebrow: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+    color: '#6B7280',
+    marginBottom: 4,
+  },
+  responseTitle: {
+    fontSize: 18,
+    fontWeight: '900',
+    color: '#111827',
+  },
+  responseBadge: {
+    backgroundColor: '#DBEAFE',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 999,
+  },
+  responseBadgeArrived: {
+    backgroundColor: '#DCFCE7',
+  },
+  responseBadgeText: {
+    color: '#1D4ED8',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+  },
+  responseBadgeTextArrived: {
+    color: '#15803D',
   },
   victimRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 10,
   },
   avatarSmall: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     backgroundColor: '#DC2626',
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 12,
+    marginRight: 10,
   },
   avatarText: { color: '#FFF', fontWeight: '800' },
   victimInfo: { flex: 1 },
-  victimName: { fontSize: 18, fontWeight: '800', color: '#111827' },
-  victimMeta: { fontSize: 13, color: '#6B7280', marginTop: 2 },
+  victimName: { fontSize: 16, fontWeight: '800', color: '#111827' },
+  victimMeta: { fontSize: 12, color: '#6B7280', marginTop: 1 },
   modeToggle: {
     flexDirection: 'row',
     backgroundColor: '#F3F4F6',
     borderRadius: 12,
     padding: 4,
-    marginBottom: 12,
+    marginBottom: 10,
   },
   modeButton: {
     flex: 1,
@@ -511,7 +611,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    paddingVertical: 8,
+    paddingVertical: 7,
     borderRadius: 10,
   },
   modeButtonActive: { backgroundColor: '#2563EB' },
@@ -521,12 +621,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'stretch',
     justifyContent: 'space-between',
-    marginBottom: 14,
+    marginBottom: 10,
   },
   statItem: { flex: 1, alignItems: 'center', gap: 4 },
   statDivider: { width: 1, backgroundColor: '#E5E7EB', marginHorizontal: 8 },
-  statValue: { fontSize: 16, fontWeight: '800', color: '#111827' },
-  statLabel: { fontSize: 12, color: '#6B7280' },
+  statValue: { fontSize: 15, fontWeight: '800', color: '#111827' },
+  statLabel: { fontSize: 11, color: '#6B7280' },
   resolutionContainer: { marginBottom: 12 },
   notesInput: {
     minHeight: 74,
@@ -537,6 +637,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     marginBottom: 12,
     color: '#111827',
+    backgroundColor: '#FAFAFA',
   },
   helpedButton: {
     flexDirection: 'row',
@@ -557,6 +658,8 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     gap: 8,
     backgroundColor: '#FFF7ED',
+    borderWidth: 1,
+    borderColor: '#FED7AA',
   },
   cannotHandleButtonText: { color: '#EA580C', fontWeight: '800', fontSize: 15 },
   abortButton: {

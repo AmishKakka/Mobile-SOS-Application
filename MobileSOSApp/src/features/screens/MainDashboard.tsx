@@ -6,6 +6,7 @@ import {
   ActivityIndicator,
   Alert,
   Animated,
+  Linking,
   Platform,
   SafeAreaView,
   StyleSheet,
@@ -13,17 +14,19 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import MapView, { Circle, Marker, PROVIDER_GOOGLE } from 'react-native-maps';
+import MapView, { Circle, Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import Geolocation from 'react-native-geolocation-service';
 
 import {
   getOrCreateDemoSession,
 } from '../../services/demoSession';
+import { GOOGLE_MAPS_API_KEY } from '../../config/keys';
 import { restoreCommunityAvailability } from '../../services/communityAvailability';
 import { registerDeviceForPush, subscribeToTokenRefresh } from '../../services/fcmSetup';
 import { requestForegroundLocationPermission } from '../../services/permissions';
 import { registerSocketUser } from '../../services/socketService';
 import { HelperLocation, useSOS } from '../../services/sosService';
+import { fetchRoute } from '../../utils/directions';
 
 type MainDashboardProps = {
   navigation: NativeStackNavigationProp<ParamListBase>;
@@ -54,26 +57,65 @@ function formatLocationLabel(location: DeviceLocation | null) {
   return `${location.latitude.toFixed(5)}, ${location.longitude.toFixed(5)}`;
 }
 
+function formatHelperDistance(distanceMeters?: number) {
+  if (distanceMeters === undefined) {
+    return 'nearby';
+  }
+
+  return distanceMeters < 1000
+    ? `${Math.round(distanceMeters)}m`
+    : `${(distanceMeters / 1000).toFixed(1)}km`;
+}
+
+function haversineMeters(a: DeviceLocation, b: DeviceLocation) {
+  const toRad = (deg: number) => (deg * Math.PI) / 180;
+  const dLat = toRad(b.latitude - a.latitude);
+  const dLon = toRad(b.longitude - a.longitude);
+  const sinLat = Math.sin(dLat / 2);
+  const sinLon = Math.sin(dLon / 2);
+  const h = sinLat * sinLat
+    + Math.cos(toRad(a.latitude)) * Math.cos(toRad(b.latitude)) * sinLon * sinLon;
+  return 6371000 * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+}
+
 export default function MainDashboard({ navigation }: MainDashboardProps) {
   const [session, setSession] = useState<{ userId: string; name: string } | null>(null);
   const [currentLocation, setCurrentLocation] = useState<DeviceLocation | null>(null);
   const [loadingLocation, setLoadingLocation] = useState(true);
   const [bootError, setBootError] = useState<string | null>(null);
+  const [assignedRouteCoords, setAssignedRouteCoords] = useState<DeviceLocation[] | null>(null);
+  const [assignedEtaText, setAssignedEtaText] = useState<string | null>(null);
   const mapRef = useRef<MapView>(null);
+  const emergencyDialPromptedRef = useRef(false);
+  const lastAssignedRouteRef = useRef<{
+    victim: DeviceLocation;
+    helper: DeviceLocation;
+  } | null>(null);
 
   const {
     isSearching,
+    isEscalated,
     searchRadius,
     timerCount,
     helpers,
     isConnected,
     statusMessage,
+    assignedHelperIds,
     triggerSOS,
     cancelSOS,
   } = useSOS({
     userId: session?.userId,
     currentLocation,
+    onVictimLocationUpdate: setCurrentLocation,
   });
+
+  const trigger911Call = async () => {
+    try {
+      await Linking.openURL('tel:911');
+    } catch {
+      Alert.alert('Error', 'Could not open the dialer.');
+    }
+  };
 
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const ring1Scale = useRef(new Animated.Value(1)).current;
@@ -219,7 +261,35 @@ export default function MainDashboard({ navigation }: MainDashboardProps) {
   }, [isSearching, pulseAnim, ring1Opacity, ring1Scale, ring2Opacity, ring2Scale]);
 
   useEffect(() => {
+    if (!isEscalated) {
+      emergencyDialPromptedRef.current = false;
+      return;
+    }
+
+    if (emergencyDialPromptedRef.current) {
+      return;
+    }
+
+    emergencyDialPromptedRef.current = true;
+    trigger911Call().catch(() => undefined);
+  }, [isEscalated]);
+
+  useEffect(() => {
     if (!currentLocation || !mapRef.current) {
+      return;
+    }
+
+    if (primaryAssignedHelper) {
+      mapRef.current.fitToCoordinates(
+        assignedRouteCoords ?? [
+          currentLocation,
+          { latitude: primaryAssignedHelper.latitude, longitude: primaryAssignedHelper.longitude },
+        ],
+        {
+          edgePadding: { top: 120, right: 60, bottom: 320, left: 60 },
+          animated: true,
+        },
+      );
       return;
     }
 
@@ -240,7 +310,7 @@ export default function MainDashboard({ navigation }: MainDashboardProps) {
       },
       800,
     );
-  }, [currentLocation, searchRadius]);
+  }, [assignedRouteCoords, currentLocation, primaryAssignedHelper, searchRadius]);
 
   const timeLabel = useMemo(() => {
     if (!isSearching) {
@@ -248,6 +318,59 @@ export default function MainDashboard({ navigation }: MainDashboardProps) {
     }
     return `Active for ${timerCount}s`;
   }, [isSearching, timerCount]);
+
+  const helperPreview = useMemo(() => helpers.slice(0, 5), [helpers]);
+  const assignedHelpers = useMemo(
+    () => helpers.filter((helper) => assignedHelperIds.includes(helper.userId)),
+    [assignedHelperIds, helpers],
+  );
+  const primaryAssignedHelper = useMemo(
+    () => assignedHelpers[0] ?? null,
+    [assignedHelpers],
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!isSearching || !currentLocation || !primaryAssignedHelper) {
+      setAssignedRouteCoords(null);
+      setAssignedEtaText(null);
+      lastAssignedRouteRef.current = null;
+      return;
+    }
+
+    const helperLocation = {
+      latitude: primaryAssignedHelper.latitude,
+      longitude: primaryAssignedHelper.longitude,
+    };
+
+    const lastAssignedRoute = lastAssignedRouteRef.current;
+    if (lastAssignedRoute) {
+      const victimMoved = haversineMeters(lastAssignedRoute.victim, currentLocation);
+      const helperMoved = haversineMeters(lastAssignedRoute.helper, helperLocation);
+      if (victimMoved < 20 && helperMoved < 20) {
+        return;
+      }
+    }
+
+    (async () => {
+      const result = await fetchRoute(currentLocation, helperLocation, GOOGLE_MAPS_API_KEY, 'DRIVE');
+      if (cancelled || !result) {
+        return;
+      }
+
+      setAssignedRouteCoords(result.coordinates);
+      setAssignedEtaText(result.durationText);
+      lastAssignedRouteRef.current = {
+        victim: currentLocation,
+        helper: helperLocation,
+      };
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentLocation, isSearching, primaryAssignedHelper]);
 
   const onPressSOS = async () => {
     if (!currentLocation) {
@@ -259,9 +382,18 @@ export default function MainDashboard({ navigation }: MainDashboardProps) {
 
   if (loadingLocation) {
     return (
-      <View style={styles.loadingState}>
-        <ActivityIndicator size="large" color="#DC2626" />
-        <Text style={styles.loadingText}>Initializing live location…</Text>
+      <View style={styles.loadingContainer}>
+        {/* The radar/pulse circle around the spinner */}
+        <View style={styles.spinnerWrapper}>
+          <ActivityIndicator size="large" color="#DC2626" />
+        </View>
+
+        {/* Brand Name */}
+        <Text style={styles.loadingTitle}>SafeGuard</Text>
+
+        {/* Reassuring Status Text */}
+        <Text style={styles.loadingText}>Acquiring high-accuracy GPS...</Text>
+        <Text style={styles.loadingSubtext}>Please hold your device steady for a faster lock.</Text>
       </View>
     );
   }
@@ -321,18 +453,29 @@ export default function MainDashboard({ navigation }: MainDashboardProps) {
               }
             />
           ))}
+
+          {assignedRouteCoords && assignedRouteCoords.length > 1 && (
+            <Polyline
+              coordinates={assignedRouteCoords}
+              strokeColor="#2563EB"
+              strokeWidth={4}
+            />
+          )}
         </MapView>
       )}
 
       <SafeAreaView style={styles.overlay} pointerEvents="box-none">
         <View style={styles.header}>
           <Text style={styles.logo}>SafeGuard</Text>
-          <View
-            style={[
-              styles.connDot,
-              { backgroundColor: isConnected ? '#10B981' : '#9CA3AF' },
-            ]}
-          />
+          <View style={styles.headerStatus}>
+            <View
+              style={[
+                styles.connDot,
+                { backgroundColor: isConnected ? '#10B981' : '#9CA3AF' },
+              ]}
+            />
+            <Text style={styles.headerStatusText}>{isConnected ? 'LIVE' : 'OFFLINE'}</Text>
+          </View>
         </View>
 
         <View style={styles.locationCard}>
@@ -374,11 +517,48 @@ export default function MainDashboard({ navigation }: MainDashboardProps) {
                   {helpers.length} helper{helpers.length > 1 ? 's' : ''} visible on map
                 </Text>
               )}
+              {primaryAssignedHelper && (
+                <Text style={styles.assignedHelperText}>
+                  {primaryAssignedHelper.name}
+                  {assignedHelpers.length > 1 ? ` +${assignedHelpers.length - 1} more` : ''}
+                  {' is on the way'}
+                  {assignedEtaText ? ` · ETA ${assignedEtaText}` : ''}
+                </Text>
+              )}
+              <View style={styles.searchMetaRow}>
+                <View style={styles.searchMetaItem}>
+                  <MapPin color="#DC2626" size={15} />
+                  <Text style={styles.searchMetaText}>{searchRadius}m radius</Text>
+                </View>
+                <View style={styles.searchMetaItem}>
+                  <Text style={styles.searchMetaText}>{timeLabel}</Text>
+                </View>
+              </View>
+
+              {helperPreview.length > 0 && (
+                <View style={styles.helperPillList}>
+                  {helperPreview.map((helper) => (
+                    <View key={helper.userId} style={styles.helperPill}>
+                      <View
+                        style={[
+                          styles.helperPillDot,
+                          { backgroundColor: isNearVictim(helper) ? '#16A34A' : '#F59E0B' },
+                        ]}
+                      />
+                      <Text numberOfLines={1} style={styles.helperPillText}>
+                        {helper.name} · {formatHelperDistance(helper.distanceMeters)}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              )}
 
               <View style={styles.actionRow}>
                 <TouchableOpacity
                   style={styles.call911Button}
-                  onPress={() => Alert.alert('Emergency', 'Call your local emergency number now.')}
+                  onPress={() => {
+                    trigger911Call().catch(() => undefined);
+                  }}
                   activeOpacity={0.85}
                 >
                   <Phone color="#FFF" size={16} />
@@ -427,12 +607,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFF',
     paddingHorizontal: 24,
   },
-  loadingText: {
-    marginTop: 16,
-    fontSize: 16,
-    color: '#374151',
-    fontWeight: '600',
-  },
   errorTitle: {
     fontSize: 20,
     fontWeight: '800',
@@ -447,21 +621,44 @@ const styles = StyleSheet.create({
     marginTop: Platform.OS === 'ios' ? 8 : 20,
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '90%',
   },
   logo: { fontSize: 28, fontWeight: '900', color: '#111827' },
   connDot: { width: 8, height: 8, borderRadius: 4, marginLeft: 8, marginTop: 2 },
+  headerStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.94)',
+    shadowColor: '#111827',
+    shadowOpacity: 0.08,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 12,
+    elevation: 4,
+  },
+  headerStatusText: {
+    marginLeft: 8,
+    color: '#374151',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+  },
   locationCard: {
     flexDirection: 'row',
-    backgroundColor: '#FFF',
+    backgroundColor: 'rgba(255,255,255,0.96)',
     padding: 18,
-    borderRadius: 20,
+    borderRadius: 24,
     width: '90%',
     alignItems: 'center',
     elevation: 8,
     marginTop: 10,
-    shadowColor: '#000',
-    shadowOpacity: 0.1,
-    shadowOffset: { width: 0, height: 4 },
+    shadowColor: '#111827',
+    shadowOpacity: 0.12,
+    shadowOffset: { width: 0, height: 10 },
+    shadowRadius: 22,
   },
   iconBox: {
     width: 40,
@@ -496,6 +693,8 @@ const styles = StyleSheet.create({
     height: SOS_BUTTON_SIZE,
     borderRadius: SOS_BUTTON_SIZE / 2,
     backgroundColor: '#DC2626',
+    borderWidth: 10,
+    borderColor: 'rgba(255,255,255,0.14)',
     justifyContent: 'center',
     alignItems: 'center',
     elevation: 12,
@@ -507,7 +706,7 @@ const styles = StyleSheet.create({
   sosText: { color: '#FFF', fontSize: 64, fontWeight: '900' },
   activeOverlay: { position: 'absolute', bottom: 40, width: '90%' },
   activeContent: {
-    backgroundColor: '#FFF',
+    backgroundColor: 'rgba(255,255,255,0.97)',
     padding: 20,
     borderRadius: 24,
     alignItems: 'center',
@@ -519,6 +718,64 @@ const styles = StyleSheet.create({
   sosActiveTitle: { fontSize: 20, fontWeight: '900', color: '#DC2626' },
   searchingCountdown: { marginTop: 6, fontWeight: '700', color: '#6B7280', fontSize: 13, textAlign: 'center' },
   helperCount: { marginTop: 4, marginBottom: 10, fontWeight: '700', color: '#10B981', fontSize: 13 },
+  assignedHelperText: {
+    marginBottom: 10,
+    fontWeight: '800',
+    color: '#2563EB',
+    fontSize: 13,
+  },
+  searchMetaRow: {
+    flexDirection: 'row',
+    width: '100%',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 12,
+  },
+  searchMetaItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#F9FAFB',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 12,
+  },
+  searchMetaText: {
+    color: '#6B7280',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  helperPillList: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    width: '100%',
+    marginBottom: 14,
+  },
+  helperPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F9FAFB',
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    gap: 6,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    maxWidth: '100%',
+  },
+  helperPillDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  helperPillText: {
+    color: '#374151',
+    fontSize: 12,
+    fontWeight: '700',
+    maxWidth: 180,
+  },
   actionRow: {
     flexDirection: 'row',
     width: '100%',
@@ -558,8 +815,8 @@ const styles = StyleSheet.create({
   bottomBtn: {
     flex: 1,
     flexDirection: 'row',
-    backgroundColor: '#FFF',
-    borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.96)',
+    borderRadius: 20,
     padding: 16,
     marginHorizontal: 8,
     alignItems: 'center',
@@ -569,4 +826,37 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
   },
   bottomBtnText: { color: '#374151', fontSize: 13, fontWeight: '700', marginLeft: 10 },
+  // --- LOADING SCREEN STYLES ---
+  loadingContainer: {
+    flex: 1, // Takes up the whole screen
+    backgroundColor: '#111827', // Sleek, modern dark gray/blue
+    justifyContent: 'center', // Centers vertically
+    alignItems: 'center', // Centers horizontally
+    padding: 20,
+  },
+  spinnerWrapper: {
+    backgroundColor: 'rgba(220, 38, 38, 0.1)', // Faint, transparent red circle
+    padding: 24, // Gives breathing room around the spinner
+    borderRadius: 50, // Makes it a perfect circle
+    marginBottom: 24, // Space between spinner and text
+  },
+  loadingTitle: {
+    color: '#F9FAFB', // Pure white
+    fontSize: 28,
+    fontWeight: '800',
+    letterSpacing: 1.5,
+    marginBottom: 12,
+  },
+  loadingText: {
+    color: '#FCA5A5', // Soft, light red to match the emergency theme
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 8,
+  },
+  loadingSubtext: {
+    color: '#9CA3AF', // Muted gray so it doesn't overwhelm the user
+    fontSize: 14,
+    textAlign: 'center',
+    paddingHorizontal: 30, // Prevents the text from stretching to the edges
+  },
 });

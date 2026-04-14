@@ -17,12 +17,13 @@ export interface MapLocation {
 
 export interface SOSState {
   isSearching: boolean;
+  isEscalated: boolean;
   searchRadius: number;
   timerCount: number;
   helpers: HelperLocation[];
   isConnected: boolean;
   statusMessage: string;
-  assignedHelperId: string | null;
+  assignedHelperIds: string[];
 }
 
 export interface SOSActions {
@@ -36,23 +37,26 @@ function computeVisualRadius(helpers: HelperLocation[]) {
   }
 
   const farthest = Math.max(...helpers.map((helper) => helper.distanceMeters || 0));
-  return Math.max(250, Math.min(3000, Math.ceil((farthest + 100) / 50) * 50));
+  return Math.max(250, Math.min(2000, Math.ceil((farthest + 100) / 50) * 50));
 }
 
 export function useSOS({
   userId,
   currentLocation,
+  onVictimLocationUpdate,
 }: {
   userId?: string;
   currentLocation: MapLocation | null;
+  onVictimLocationUpdate?: (location: MapLocation) => void;
 }): SOSState & SOSActions {
   const [isSearching, setIsSearching] = useState(false);
+  const [isEscalated, setIsEscalated] = useState(false);
   const [searchRadius, setSearchRadius] = useState(0);
   const [timerCount, setTimerCount] = useState(0);
   const [helpers, setHelpers] = useState<HelperLocation[]>([]);
   const [isConnected, setIsConnected] = useState(false);
   const [statusMessage, setStatusMessage] = useState('Ready');
-  const [assignedHelperId, setAssignedHelperId] = useState<string | null>(null);
+  const [assignedHelperIds, setAssignedHelperIds] = useState<string[]>([]);
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const watchIdRef = useRef<number | null>(null);
@@ -73,10 +77,11 @@ export function useSOS({
   const resetSOSState = useCallback(() => {
     stopLocalTracking();
     setIsSearching(false);
+    setIsEscalated(false);
     setSearchRadius(0);
     setTimerCount(0);
     setHelpers([]);
-    setAssignedHelperId(null);
+    setAssignedHelperIds([]);
     setStatusMessage('Ready');
   }, [stopLocalTracking]);
 
@@ -167,8 +172,17 @@ export function useSOS({
         return;
       }
 
-      setAssignedHelperId(payload.helperId);
-      setHelpers((previous) => previous.filter((helper) => helper.userId === payload.helperId));
+      setAssignedHelperIds((previous) => {
+        if (Array.isArray(payload.acceptedHelperIds) && payload.acceptedHelperIds.length > 0) {
+          return payload.acceptedHelperIds.map((id: any) => String(id));
+        }
+
+        const nextId = String(payload.helperId || '');
+        if (!nextId || previous.includes(nextId)) {
+          return previous;
+        }
+        return [...previous, nextId];
+      });
       setStatusMessage(payload.message || 'A helper is on the way.');
     };
 
@@ -177,6 +191,7 @@ export function useSOS({
         return;
       }
       setStatusMessage(payload.message || 'No helpers available. Escalate immediately.');
+      setIsEscalated(true);
     };
 
     const onCancelled = (payload: any) => {
@@ -198,8 +213,15 @@ export function useSOS({
       if (payload.roomId !== roomId) {
         return;
       }
-      setAssignedHelperId(null);
-      setStatusMessage(payload.reason || 'Assigned helper stopped responding. Searching again...');
+      setAssignedHelperIds((previous) => {
+        if (Array.isArray(payload.acceptedHelperIds)) {
+          return payload.acceptedHelperIds.map((id: any) => String(id));
+        }
+
+        const cancelledHelperId = String(payload.helperId || '');
+        return previous.filter((helperId) => helperId !== cancelledHelperId);
+      });
+      setStatusMessage(payload.reason || 'Assigned helper stopped responding.');
     };
 
     socket.on(`sos_helpers_${roomId}`, onHelpersFound);
@@ -253,10 +275,11 @@ export function useSOS({
     };
 
     setIsSearching(true);
+    setIsEscalated(false);
     setTimerCount(0);
     setHelpers([]);
     setSearchRadius(250);
-    setAssignedHelperId(null);
+    setAssignedHelperIds([]);
     setStatusMessage('Searching nearby helpers...');
 
     socket.emit('sos_trigger', { userId, location: initialLocation });
@@ -264,9 +287,15 @@ export function useSOS({
     try {
       Geolocation.getCurrentPosition(
         (position) => {
+          const nextLocation = {
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude,
+          };
+
+          onVictimLocationUpdate?.(nextLocation);
           socket.emit('victim_location_update', {
             roomId,
-            location: { lat: position.coords.latitude, lng: position.coords.longitude },
+            location: { lat: nextLocation.latitude, lng: nextLocation.longitude },
           });
         },
         (error) => {
@@ -283,9 +312,15 @@ export function useSOS({
 
       watchIdRef.current = Geolocation.watchPosition(
         (position) => {
+          const nextLocation = {
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude,
+          };
+
+          onVictimLocationUpdate?.(nextLocation);
           socket.emit('victim_location_update', {
             roomId,
-            location: { lat: position.coords.latitude, lng: position.coords.longitude },
+            location: { lat: nextLocation.latitude, lng: nextLocation.longitude },
           });
         },
         (error) => console.error('[SOS] Failed to stream victim location:', error),
@@ -302,7 +337,7 @@ export function useSOS({
       console.error('[SOS] watchPosition threw during SOS start:', error);
       setStatusMessage('SOS active. Live location updates are temporarily unavailable.');
     }
-  }, [currentLocation, roomId, userId]);
+  }, [currentLocation, onVictimLocationUpdate, roomId, userId]);
 
   const cancelSOS = useCallback(() => {
     if (!roomId) {
@@ -323,12 +358,13 @@ export function useSOS({
 
   return {
     isSearching,
+    isEscalated,
     searchRadius,
     timerCount,
     helpers,
     isConnected,
     statusMessage,
-    assignedHelperId,
+    assignedHelperIds,
     triggerSOS,
     cancelSOS,
   };

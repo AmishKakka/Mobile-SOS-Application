@@ -4,6 +4,27 @@ const User = require('../models/User');
 const MAX_RINGS = Number(process.env.SOS_MAX_RINGS || 11);
 const MAX_HELPERS = Number(process.env.SOS_MAX_HELPERS || 5);
 const H3_RESOLUTION = Number(process.env.H3_RESOLUTION || 9);
+const MAX_RADIUS_METERS = Number(process.env.SOS_MAX_RADIUS_METERS || 2000);
+
+function estimateRadiusForRing(victimCell, ring) {
+  if (!victimCell || ring <= 0) {
+    return 250;
+  }
+
+  const cells = h3.gridRing(victimCell, ring);
+  const sampleCell = cells[0];
+  if (!sampleCell) {
+    return 250;
+  }
+
+  const [victimLat, victimLng] = h3.cellToLatLng(victimCell);
+  const [ringLat, ringLng] = h3.cellToLatLng(sampleCell);
+
+  return Math.max(
+    250,
+    Math.round(calculateDistance(victimLat, victimLng, ringLat, ringLng) + 150),
+  );
+}
 
 async function triggerSOS(victimLat, victimLng, rejectIds = [], redisClient, options = {}) {
   if (!Number.isFinite(victimLat) || !Number.isFinite(victimLng)) {
@@ -23,12 +44,28 @@ async function triggerSOS(victimLat, victimLng, rejectIds = [], redisClient, opt
   const minResults = Number.isFinite(requestedMinResults)
     ? Math.max(1, Math.floor(requestedMinResults))
     : Math.min(MAX_HELPERS, maxResults);
+  const requestedMaxRadiusMeters = Number(options.maxRadiusMeters);
+  const maxRadiusMeters = Number.isFinite(requestedMaxRadiusMeters)
+    ? Math.max(250, Math.min(Math.floor(requestedMaxRadiusMeters), MAX_RADIUS_METERS))
+    : MAX_RADIUS_METERS;
 
   const rejected = new Set(rejectIds.map(String));
   const victimCell = h3.latLngToCell(victimLat, victimLng, H3_RESOLUTION);
   const helperIds = new Set();
+  let searchedRing = 0;
+  let radiusMeters = 250;
+  let maxRadiusReached = false;
 
   for (let ring = 0; ring <= maxRing; ring += 1) {
+    const estimatedRadius = estimateRadiusForRing(victimCell, ring);
+    if (ring > 0 && estimatedRadius > maxRadiusMeters) {
+      maxRadiusReached = true;
+      break;
+    }
+
+    searchedRing = ring;
+    radiusMeters = Math.min(maxRadiusMeters, estimatedRadius);
+
     const cells = ring === 0 ? [victimCell] : h3.gridRing(victimCell, ring);
 
     for (const cell of cells) {
@@ -41,7 +78,18 @@ async function triggerSOS(victimLat, victimLng, rejectIds = [], redisClient, opt
     if (helperIds.size >= minResults) break;
   }
 
-  if (helperIds.size === 0) return [];
+  if (searchedRing >= MAX_RINGS || radiusMeters >= maxRadiusMeters) {
+    maxRadiusReached = true;
+  }
+
+  if (helperIds.size === 0) {
+    return {
+      helpers: [],
+      searchedRing,
+      radiusMeters,
+      maxRadiusReached,
+    };
+  }
 
   const pipeline = redisClient.multi();
   for (const helperId of helperIds) {
@@ -82,7 +130,12 @@ async function triggerSOS(victimLat, victimLng, rejectIds = [], redisClient, opt
   }
 
   helpers.sort((a, b) => a.distance - b.distance);
-  return helpers.slice(0, maxResults);
+  return {
+    helpers: helpers.slice(0, maxResults),
+    searchedRing,
+    radiusMeters,
+    maxRadiusReached,
+  };
 }
 
 function calculateDistance(lat1, lng1, lat2, lng2) {
@@ -100,4 +153,4 @@ function calculateDistance(lat1, lng1, lat2, lng2) {
   return earthRadiusMeters * c;
 }
 
-module.exports = { triggerSOS, calculateDistance };
+module.exports = { triggerSOS, calculateDistance, estimateRadiusForRing };
