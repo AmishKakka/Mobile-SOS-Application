@@ -2,7 +2,6 @@ import type { ParamListBase } from '@react-navigation/native';
 import { API_BASE_URL } from '../../config/config';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-// import { Alert } from 'react-native';
 import React, { useMemo, useState } from "react";
 import {
     KeyboardAvoidingView,

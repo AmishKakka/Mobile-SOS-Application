@@ -1,183 +1,194 @@
-import React, { useState } from 'react';
+import type { ParamListBase } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { API_BASE_URL } from '../../config/config';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import React, { useState, useEffect } from 'react';
 import {
-  View,
-  Text,
-  TextInput,
-  StyleSheet,
-  TouchableOpacity,
-  ScrollView,
-  SafeAreaView,
+    KeyboardAvoidingView,
+    Platform,
+    Pressable,
+    SafeAreaView,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    View,
+    ActivityIndicator,
+    Alert
 } from 'react-native';
-import { HeartPulse, Pill } from 'lucide-react-native';
 
-const MedicalProfileScreen = () => {
-  const [formData, setFormData] = useState({
-    diseases: '',
-    medications: '',
-  });
-
-  const handleSave = () => {
-    console.log('Saving medical profile to MongoDB...', formData);
-
-  };
-
-  return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView
-        contentContainerStyle={styles.scroll}
-        keyboardShouldPersistTaps="handled"
-      >
-        {/* Page Header */}
-        <Text style={styles.header}>Medical Profile</Text>
-        <Text style={styles.subheader}>
-          This information may be shared with first responders during an emergency.
-        </Text>
-
-        {/* Diseases / Conditions */}
-        <View style={styles.inputGroup}>
-          <View style={styles.labelRow}>
-            <View style={[styles.iconBox, { backgroundColor: '#FEE2E2' }]}>
-              <HeartPulse color="#DC2626" size={18} />
-            </View>
-            <Text style={styles.label}>Diseases / Medical Conditions</Text>
-          </View>
-          <TextInput
-            style={styles.textArea}
-            placeholder={
-              'e.g. Type 2 Diabetes, Hypertension, Asthma...\n\nList any chronic conditions, allergies, or medical history that first responders should know about.'
-            }
-            placeholderTextColor="#9CA3AF"
-            value={formData.diseases}
-            onChangeText={(t) => setFormData({ ...formData, diseases: t })}
-            multiline
-            textAlignVertical="top"
-          />
-        </View>
-
-        {/* Medications */}
-        <View style={styles.inputGroup}>
-          <View style={styles.labelRow}>
-            <View style={[styles.iconBox, { backgroundColor: '#ECFDF5' }]}>
-              <Pill color="#10B981" size={18} />
-            </View>
-            <Text style={styles.label}>Current Medications</Text>
-          </View>
-          <TextInput
-            style={styles.textArea}
-            placeholder={
-              'e.g. Metformin 500mg, Lisinopril 10mg...\n\nList medications you are currently taking, including dosage if known.'
-            }
-            placeholderTextColor="#9CA3AF"
-            value={formData.medications}
-            onChangeText={(t) => setFormData({ ...formData, medications: t })}
-            multiline
-            textAlignVertical="top"
-          />
-        </View>
-
-        {/* Privacy Note */}
-        <View style={styles.privacyCard}>
-          <Text style={styles.privacyTitle}>🔒 Privacy Notice</Text>
-          <Text style={styles.privacyText}>
-            Your medical information is encrypted and only shared with verified
-            first responders when an SOS is triggered. It is never shared
-            without your consent.
-          </Text>
-        </View>
-
-        {/* Save Button */}
-        <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
-          <Text style={styles.saveButtonText}>Save Medical Profile</Text>
-        </TouchableOpacity>
-
-      </ScrollView>
-    </SafeAreaView>
-  );
+type MedicalProfileProps = {
+    navigation: NativeStackNavigationProp<ParamListBase>;
 };
 
+export default function MedicalProfileScreen({ navigation }: MedicalProfileProps) {
+    const [isLoading, setIsLoading] = useState(true);
+    const [medicalData, setMedicalData] = useState({
+        bloodType: '',
+        allergies: '',
+        medications: '',
+        conditions: ''
+    });
+
+    // 1. FETCH EXISTING DATA ON LOAD
+    useEffect(() => {
+        const fetchMedicalData = async () => {
+            try {
+                const token = await AsyncStorage.getItem('userToken');
+                if (!token) return;
+
+                const response = await fetch(`${API_BASE_URL}/users/profile`, {
+                    method: 'GET',
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    
+                    // If they have medical data, convert the MongoDB arrays back into readable comma-separated strings
+                  if (data.medical) {
+                    setMedicalData({
+                      // Change from data.medical.bloodType to data.medical.bloodGroup
+                      bloodType: data.medical.bloodGroup || '',
+                      allergies: data.medical.allergies ? data.medical.allergies.join(', ') : '',
+                      medications: data.medical.medications ? data.medical.medications.join(', ') : '',
+                      conditions: data.medical.conditions ? data.medical.conditions.join(', ') : ''
+                    });
+                  }
+                }
+            } catch (error) {
+                console.error("Failed to load medical profile:", error);
+            } finally {
+                setIsLoading(false);
+            }
+        };
+
+        fetchMedicalData();
+    }, []);
+
+    // 2. SAVE EDITED DATA
+    const handleSave = async () => {
+        try {
+            const token = await AsyncStorage.getItem('userToken');
+
+            // Convert the comma-separated text box strings back into neat Arrays for MongoDB
+          const formattedMedicalData = {
+            // Send it as 'bloodGroup' and force it to be uppercase so Mongoose accepts it!
+            bloodGroup: medicalData.bloodType ? medicalData.bloodType.trim().toUpperCase() : null,
+            allergies: medicalData.allergies.split(',').map(item => item.trim()).filter(item => item !== ''),
+            medications: medicalData.medications.split(',').map(item => item.trim()).filter(item => item !== ''),
+            conditions: medicalData.conditions.split(',').map(item => item.trim()).filter(item => item !== '')
+          };
+
+            const response = await fetch(`${API_BASE_URL}/users/profile`, {
+                method: 'PUT',
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}` 
+                },
+                body: JSON.stringify({ medical: formattedMedicalData }) 
+            });
+
+            if (response.ok) {
+                navigation.goBack();
+            } else {
+                const err = await response.json();
+                Alert.alert("Error", err.message || "Failed to update medical profile.");
+            }
+        } catch (error) {
+            console.error("Network error during medical update:", error);
+            Alert.alert("Error", "Network error. Please try again.");
+        }
+    };
+
+    // Show a loading spinner while fetching
+    if (isLoading) {
+        return (
+            <SafeAreaView style={[styles.safeArea, { justifyContent: 'center', alignItems: 'center' }]}>
+                <ActivityIndicator size="large" color="#F40009" />
+            </SafeAreaView>
+        );
+    }
+
+    return (
+        <SafeAreaView style={styles.safeArea}>
+            <KeyboardAvoidingView
+                behavior={Platform.OS === "ios" ? "padding" : undefined}
+                style={{ flex: 1 }}
+            >
+                <ScrollView contentContainerStyle={styles.scrollContent}>
+                    <View style={styles.header}>
+                        <Text style={styles.title}>Medical History</Text>
+                        <Text style={styles.subtitle}>Update your vital health details to inform responders during an SOS event.</Text>
+                    </View>
+
+                    <View style={styles.inputGroup}>
+                        <Text style={styles.label}>Blood Type</Text>
+                        <TextInput 
+                            style={styles.input} 
+                            placeholder="e.g. O+, A-, AB+"
+                            value={medicalData.bloodType} 
+                            onChangeText={(t) => setMedicalData({...medicalData, bloodType: t})} 
+                        />
+                    </View>
+
+                    <View style={styles.inputGroup}>
+                        <Text style={styles.label}>Allergies</Text>
+                        <TextInput 
+                            style={[styles.input, styles.textArea]} 
+                            placeholder="e.g. Peanuts, Penicillin (comma separated)"
+                            multiline
+                            numberOfLines={3}
+                            value={medicalData.allergies} 
+                            onChangeText={(t) => setMedicalData({...medicalData, allergies: t})} 
+                        />
+                    </View>
+
+                    <View style={styles.inputGroup}>
+                        <Text style={styles.label}>Current Medications</Text>
+                        <TextInput 
+                            style={[styles.input, styles.textArea]} 
+                            placeholder="List any daily medications (comma separated)..."
+                            multiline
+                            numberOfLines={3}
+                            value={medicalData.medications} 
+                            onChangeText={(t) => setMedicalData({...medicalData, medications: t})} 
+                        />
+                    </View>
+
+                    <View style={styles.inputGroup}>
+                        <Text style={styles.label}>Chronic Conditions</Text>
+                        <TextInput 
+                            style={[styles.input, styles.textArea]} 
+                            placeholder="e.g. Asthma, Diabetes (comma separated)"
+                            multiline
+                            numberOfLines={3}
+                            value={medicalData.conditions} 
+                            onChangeText={(t) => setMedicalData({...medicalData, conditions: t})} 
+                        />
+                    </View>
+
+                    <Pressable style={styles.submitButton} onPress={handleSave}>
+                        <Text style={styles.submitButtonText}>Save Changes</Text>
+                    </Pressable>
+                </ScrollView>
+            </KeyboardAvoidingView>
+        </SafeAreaView>
+    );
+}
+
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#ffffff' },
-  scroll: { padding: 24, paddingBottom: 48 },
-
-  header: {
-    fontSize: 26,
-    fontWeight: 'bold',
-    color: '#111827',
-    marginBottom: 8,
-  },
-  subheader: {
-    fontSize: 14,
-    color: '#6B7280',
-    lineHeight: 20,
-    marginBottom: 32,
-  },
-
-  inputGroup: { marginBottom: 28 },
-
-  labelRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  iconBox: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  label: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#111827',
-    flex: 1,
-  },
-
-  textArea: {
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    borderRadius: 12,
-    padding: 16,
-    fontSize: 15,
-    color: '#111827',
-    backgroundColor: '#F9FAFB',
-    minHeight: 160,
-    lineHeight: 22,
-  },
-
-  privacyCard: {
-    backgroundColor: '#F0FDF4',
-    borderRadius: 12,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#BBF7D0',
-    marginBottom: 28,
-  },
-  privacyTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#065F46',
-    marginBottom: 6,
-  },
-  privacyText: {
-    fontSize: 13,
-    color: '#047857',
-    lineHeight: 19,
-  },
-
-  saveButton: {
-    backgroundColor: '#DC2626',
-    paddingVertical: 15,
-    borderRadius: 12,
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  saveButtonText: {
-    color: '#ffffff',
-    fontSize: 15,
-    fontWeight: 'bold',
-  },
+    safeArea: { flex: 1, backgroundColor: "#F9FAFB" },
+    scrollContent: { padding: 24, flexGrow: 1, justifyContent: "center" },
+    header: { marginBottom: 32 },
+    title: { fontSize: 32, fontWeight: "800", color: "#0f1f39" },
+    subtitle: { marginTop: 6, fontSize: 16, color: "#5a6072" },
+    
+    inputGroup: { marginBottom: 16 },
+    label: { marginBottom: 6, color: "#32476b", fontWeight: "600" },
+    input: { borderWidth: 1, borderColor: "#d8deec", borderRadius: 12, padding: 14, fontSize: 16, backgroundColor: "white" },
+    textArea: { height: 80, textAlignVertical: 'top' },
+    
+    submitButton: { backgroundColor: "#F40009", borderRadius: 12, paddingVertical: 16, alignItems: "center", marginTop: 24, marginBottom: 40 },
+    submitButtonText: { color: "white", fontSize: 18, fontWeight: "bold" }
 });
-
-export default MedicalProfileScreen;

@@ -31,6 +31,14 @@ export default function CompleteMedicalProfile({ navigation }: CompleteMedicalPr
         try {
             const token = await AsyncStorage.getItem('userToken');
 
+            const formattedMedicalData = {
+                // Send it as 'bloodGroup' and force it to be uppercase so Mongoose accepts it!
+                bloodGroup: medicalData.bloodType ? medicalData.bloodType.trim().toUpperCase() : null,
+                allergies: medicalData.allergies.split(',').map(item => item.trim()).filter(item => item !== ''),
+                medications: medicalData.medications.split(',').map(item => item.trim()).filter(item => item !== ''),
+                conditions: medicalData.conditions.split(',').map(item => item.trim()).filter(item => item !== '')
+            };
+
             const response = await fetch(`${API_BASE_URL}/users/profile`, {
                 method: 'PUT',
                 headers: { 
@@ -38,7 +46,7 @@ export default function CompleteMedicalProfile({ navigation }: CompleteMedicalPr
                     'Authorization': `Bearer ${token}` 
                 },
                 body: JSON.stringify({ 
-                    medical: medicalData 
+                    medical: formattedMedicalData 
                 }) 
             });
 
