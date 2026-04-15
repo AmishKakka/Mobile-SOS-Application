@@ -10,7 +10,7 @@ import { io, Socket } from 'socket.io-client';
 // Local dev  : 'http://localhost:3000'   (backend running locally / docker)
 // Use your device IP address instead of "localhost" using -> ipconfig getifaddr en0
 // Production : your ALB DNS from terraform output
-const BACKEND_URL = 'http://192.168.0.197:3000';
+const BACKEND_URL = 'http://localhost:3000';
 
 let socket: Socket | null = null;
 
