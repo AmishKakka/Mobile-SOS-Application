@@ -1,4 +1,5 @@
 import {
+  setActiveDeviceRole,
   getOrCreateDemoSession,
   getStoredDemoSession,
   syncDemoSession,
@@ -11,6 +12,7 @@ import {
   startPassiveTracking,
   stopPassiveTracking,
 } from './locationTracker';
+import { registerDeviceForPush } from './fcmSetup';
 import { requestLocationPermissionsForTracking } from './permissions';
 
 type CommunityAvailabilityResult = {
@@ -21,8 +23,8 @@ type CommunityAvailabilityResult = {
 
 export async function getCommunityAvailabilitySnapshot(): Promise<CommunityAvailabilityResult> {
   const session =
-    (await getStoredDemoSession('victim')) ||
-    (await getOrCreateDemoSession('victim', 'SafeGuard User'));
+    (await getStoredDemoSession('helper')) ||
+    (await getOrCreateDemoSession('helper', 'Community Helper'));
   const helperMode = await getHelperModeState();
 
   return {
@@ -36,8 +38,8 @@ export async function getCommunityAvailabilitySnapshot(): Promise<CommunityAvail
 
 export async function restoreCommunityAvailability(): Promise<CommunityAvailabilityResult> {
   const session =
-    (await getStoredDemoSession('victim')) ||
-    (await getOrCreateDemoSession('victim', 'SafeGuard User'));
+    (await getStoredDemoSession('helper')) ||
+    (await getOrCreateDemoSession('helper', 'Community Helper'));
   const helperMode = await getHelperModeState();
   let syncWarning = '';
 
@@ -49,6 +51,7 @@ export async function restoreCommunityAvailability(): Promise<CommunityAvailabil
 
   if (!helperMode.isAvailable) {
     try {
+      await setActiveDeviceRole('victim');
       await stopPassiveTracking();
       await updateHelperAvailability(session.userId, false);
     } catch (error: any) {
@@ -68,6 +71,8 @@ export async function restoreCommunityAvailability(): Promise<CommunityAvailabil
   }
 
   try {
+    await setActiveDeviceRole('helper');
+    await registerDeviceForPush(session);
     await sendImmediateLocation(session.userId);
     await startPassiveTracking(session.userId);
     await flushOfflineQueue(session.userId);
@@ -94,10 +99,11 @@ export async function setCommunityAvailability(
   nextValue: boolean,
 ): Promise<CommunityAvailabilityResult> {
   const session =
-    (await getStoredDemoSession('victim')) ||
-    (await getOrCreateDemoSession('victim', 'SafeGuard User'));
+    (await getStoredDemoSession('helper')) ||
+    (await getOrCreateDemoSession('helper', 'Community Helper'));
 
   if (!nextValue) {
+    await setActiveDeviceRole('victim');
     await stopPassiveTracking();
     await updateHelperAvailability(session.userId, false);
     await syncDemoSession(session, { isHelperAvailable: false });
@@ -112,6 +118,7 @@ export async function setCommunityAvailability(
 
   const granted = await requestLocationPermissionsForTracking();
   if (!granted) {
+    await setActiveDeviceRole('victim');
     await updateHelperAvailability(session.userId, false);
     await syncDemoSession(session, { isHelperAvailable: false });
     await setHelperModeState(false);
@@ -123,6 +130,8 @@ export async function setCommunityAvailability(
     };
   }
 
+  await setActiveDeviceRole('helper');
+  await registerDeviceForPush(session);
   await sendImmediateLocation(session.userId);
   await startPassiveTracking(session.userId);
   await flushOfflineQueue(session.userId);

@@ -62,7 +62,7 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         
         {/* HEADER SECTION */}
         <View style={styles.header}>
@@ -169,7 +169,7 @@ const styles = StyleSheet.create({
   /* Toggles & Menu Items */
   toggleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16 },
   menuItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16 },
-  iconAndText: { flexDirection: 'row', alignItems: 'center' },
+  iconAndText: { flexDirection: 'row', alignItems: 'center', flex: 1, minWidth: 0 },
   iconBox: { width: 36, height: 36, borderRadius: 10, justifyContent: 'center', alignItems: 'center', marginRight: 12 },
   
   toggleTitle: { fontSize: 16, fontWeight: '600', color: '#111827' },

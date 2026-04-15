@@ -5,6 +5,7 @@ import {
   Dimensions,
   Platform,
   SafeAreaView,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -17,7 +18,10 @@ import type { ParamListBase } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
 
-import { getOrCreateDemoSession } from '../../services/demoSession';
+import {
+  getActiveDeviceRole,
+  getOrCreateDemoSession,
+} from '../../services/demoSession';
 import { getHelperModeState } from '../../services/helperMode';
 import { registerSocketUser, getSocket } from '../../services/socketService';
 
@@ -63,8 +67,12 @@ export default function HelperSOSNotificationScreen({ navigation, route }: Props
   const slideAnim = useRef(new Animated.Value(60)).current;
 
   useEffect(() => {
-    Promise.all([getOrCreateDemoSession('victim', 'SafeGuard User'), getHelperModeState()]).then(([session, helperMode]) => {
-      if (!session || !helperMode.isAvailable) {
+    Promise.all([
+      getActiveDeviceRole(),
+      getOrCreateDemoSession('helper', 'Community Helper'),
+      getHelperModeState(),
+    ]).then(([activeRole, session, helperMode]) => {
+      if (!session || activeRole !== 'helper' || !helperMode.isAvailable) {
         Alert.alert('Helper mode inactive', 'This device is not currently acting as a helper.', [
           {
             text: 'OK',
@@ -75,7 +83,7 @@ export default function HelperSOSNotificationScreen({ navigation, route }: Props
       }
 
       setHelperSession(session);
-      registerSocketUser(session.userId, 'victim', session.name);
+      registerSocketUser(session.userId, 'helper', session.name);
     });
 
     Animated.loop(
@@ -143,78 +151,85 @@ export default function HelperSOSNotificationScreen({ navigation, route }: Props
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <Animated.View style={[styles.alertIconCircle, { transform: [{ scale: pulseAnim }] }]}> 
-          <AlertTriangle color="#FFF" size={32} />
-        </Animated.View>
-        <Text style={styles.headerTitle}>SOS ALERT</Text>
-        <Text style={styles.headerSub}>This alert is live. Stop pretending it is a test flow.</Text>
-      </View>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        bounces={false}
+      >
+        <View style={styles.header}>
+          <Animated.View style={[styles.alertIconCircle, { transform: [{ scale: pulseAnim }] }]}>
+            <AlertTriangle color="#FFF" size={32} />
+          </Animated.View>
+          <Text style={styles.headerTitle}>SOS ALERT</Text>
+          <Text style={styles.headerSub}>This alert is live. Stop pretending it is a test flow.</Text>
+        </View>
 
-      <Animated.View style={[styles.card, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
-        <View style={styles.victimRow}>
-          <View style={styles.avatarCircle}>
-            <User color="#FFF" size={24} />
-          </View>
-          <View style={styles.victimInfo}>
-            <Text style={styles.victimName}>{victimName}</Text>
-            <View style={styles.badgeRow}>
-              <View style={styles.badge}>
-                <MapPin color="#DC2626" size={14} />
-                <Text style={styles.badgeText}>{formatDistance(helperDistanceMeters)}</Text>
+        <Animated.View style={[styles.card, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
+          <View style={styles.victimRow}>
+            <View style={styles.avatarCircle}>
+              <User color="#FFF" size={24} />
+            </View>
+            <View style={styles.victimInfo}>
+              <Text style={styles.victimName}>{victimName}</Text>
+              <View style={styles.badgeRow}>
+                <View style={styles.badge}>
+                  <MapPin color="#DC2626" size={14} />
+                  <Text style={styles.badgeText}>{formatDistance(helperDistanceMeters)}</Text>
+                </View>
               </View>
             </View>
           </View>
-        </View>
 
-        <View style={styles.infoRow}>
-          <Text style={styles.infoLabel}>Incident</Text>
-          <Text style={styles.infoValue}>{incidentType}</Text>
-        </View>
-        <View style={styles.infoRow}>
-          <Text style={styles.infoLabel}>Room</Text>
-          <Text style={styles.infoValue}>{roomId}</Text>
-        </View>
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>Incident</Text>
+            <Text style={styles.infoValue}>{incidentType}</Text>
+          </View>
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>Room</Text>
+            <Text style={styles.infoValue}>{roomId}</Text>
+          </View>
 
-        <View style={styles.mapWrap}>
-          <MapView
-            style={styles.map}
-            pointerEvents="none"
-            initialRegion={{
-              latitude: victimLocation.lat,
-              longitude: victimLocation.lng,
-              latitudeDelta: 0.012,
-              longitudeDelta: 0.012,
-            }}
+          <View style={styles.mapWrap}>
+            <MapView
+              style={styles.map}
+              pointerEvents="none"
+              initialRegion={{
+                latitude: victimLocation.lat,
+                longitude: victimLocation.lng,
+                latitudeDelta: 0.012,
+                longitudeDelta: 0.012,
+              }}
+            >
+              <Marker
+                coordinate={{ latitude: victimLocation.lat, longitude: victimLocation.lng }}
+                pinColor="#DC2626"
+                title={victimName}
+                description="Victim live location"
+              />
+            </MapView>
+          </View>
+        </Animated.View>
+
+        <View style={styles.actionsContainer}>
+          <TouchableOpacity
+            style={[styles.acceptButton, isAccepting && styles.acceptButtonDisabled]}
+            activeOpacity={0.8}
+            onPress={handleAccept}
+            disabled={isAccepting}
           >
-            <Marker
-              coordinate={{ latitude: victimLocation.lat, longitude: victimLocation.lng }}
-              pinColor="#DC2626"
-              title={victimName}
-              description="Victim live location"
-            />
-          </MapView>
+            <Check color="#FFF" size={22} />
+            <Text style={styles.acceptButtonText}>
+              {isAccepting ? 'Confirming...' : 'Accept & Respond'}
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.rejectButton} activeOpacity={0.8} onPress={handleReject}>
+            <X color="#6B7280" size={20} />
+            <Text style={styles.rejectButtonText}>Decline</Text>
+          </TouchableOpacity>
         </View>
-      </Animated.View>
-
-      <View style={styles.actionsContainer}>
-        <TouchableOpacity
-          style={[styles.acceptButton, isAccepting && styles.acceptButtonDisabled]}
-          activeOpacity={0.8}
-          onPress={handleAccept}
-          disabled={isAccepting}
-        >
-          <Check color="#FFF" size={22} />
-          <Text style={styles.acceptButtonText}>
-            {isAccepting ? 'Confirming...' : 'Accept & Respond'}
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.rejectButton} activeOpacity={0.8} onPress={handleReject}>
-          <X color="#6B7280" size={20} />
-          <Text style={styles.rejectButtonText}>Decline</Text>
-        </TouchableOpacity>
-      </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -225,10 +240,18 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFF',
     paddingTop: Platform.OS === 'android' ? 40 : 0,
   },
+  scroll: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingBottom: 24,
+    flexGrow: 1,
+  },
   header: {
     alignItems: 'center',
     paddingTop: 24,
     paddingBottom: 20,
+    paddingHorizontal: 20,
   },
   alertIconCircle: {
     width: 72,
@@ -255,6 +278,8 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: '#6B7280',
     fontWeight: '500',
+    textAlign: 'center',
+    flexShrink: 1,
   },
   card: {
     marginHorizontal: 20,
@@ -285,12 +310,14 @@ const styles = StyleSheet.create({
   },
   victimInfo: {
     flex: 1,
+    minWidth: 0,
   },
   victimName: {
     fontSize: 20,
     fontWeight: '800',
     color: '#111827',
     marginBottom: 6,
+    flexShrink: 1,
   },
   badgeRow: {
     flexDirection: 'row',
@@ -313,6 +340,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     marginBottom: 10,
+    gap: 12,
   },
   infoLabel: {
     color: '#6B7280',
@@ -322,6 +350,8 @@ const styles = StyleSheet.create({
     color: '#111827',
     fontSize: 13,
     fontWeight: '700',
+    flexShrink: 1,
+    textAlign: 'right',
   },
   mapWrap: {
     width: '100%',
@@ -337,6 +367,7 @@ const styles = StyleSheet.create({
   actionsContainer: {
     paddingHorizontal: 20,
     marginTop: 20,
+    marginBottom: 8,
   },
   acceptButton: {
     flexDirection: 'row',

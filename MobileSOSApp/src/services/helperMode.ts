@@ -1,6 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const HELPER_MODE_KEY = '@safeguard_helper_mode';
+const HELPER_MODE_SCHEMA_KEY = '@safeguard_helper_mode_schema';
+const HELPER_MODE_SCHEMA_VERSION = 1;
 
 export type HelperModeState = {
   isAvailable: boolean;
@@ -8,12 +10,22 @@ export type HelperModeState = {
 };
 
 const DEFAULT_STATE: HelperModeState = {
-  isAvailable: true,
+  isAvailable: false,
   updatedAt: null,
 };
 
 export async function getHelperModeState(): Promise<HelperModeState> {
   try {
+    const schemaVersion = await AsyncStorage.getItem(HELPER_MODE_SCHEMA_KEY);
+    if (schemaVersion !== String(HELPER_MODE_SCHEMA_VERSION)) {
+      await AsyncStorage.setItem(HELPER_MODE_KEY, JSON.stringify(DEFAULT_STATE));
+      await AsyncStorage.setItem(
+        HELPER_MODE_SCHEMA_KEY,
+        String(HELPER_MODE_SCHEMA_VERSION),
+      );
+      return DEFAULT_STATE;
+    }
+
     const raw = await AsyncStorage.getItem(HELPER_MODE_KEY);
     if (!raw) {
       return DEFAULT_STATE;
@@ -39,6 +51,9 @@ export async function setHelperModeState(isAvailable: boolean) {
     updatedAt: Date.now(),
   };
 
-  await AsyncStorage.setItem(HELPER_MODE_KEY, JSON.stringify(nextState));
+  await AsyncStorage.multiSet([
+    [HELPER_MODE_KEY, JSON.stringify(nextState)],
+    [HELPER_MODE_SCHEMA_KEY, String(HELPER_MODE_SCHEMA_VERSION)],
+  ]);
   return nextState;
 }

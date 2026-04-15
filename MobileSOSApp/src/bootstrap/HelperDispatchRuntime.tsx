@@ -8,6 +8,7 @@ import {
 import { useEffect, useRef } from 'react';
 
 import {
+  getActiveDeviceRole,
   getOrCreateDemoSession,
   syncDemoSession,
 } from '../services/demoSession';
@@ -65,8 +66,14 @@ export default function HelperDispatchRuntime() {
   const lastOpenedAtRef = useRef(0);
 
   const isHelperDispatchEnabled = async (payload?: IncomingSOSPayload | null) => {
-    const session = await getOrCreateDemoSession('victim', 'SafeGuard User');
+    const activeRole = await getActiveDeviceRole();
     const helperMode = await getHelperModeState();
+
+    if (activeRole !== 'helper' || !helperMode.isAvailable) {
+      return null;
+    }
+
+    const session = await getOrCreateDemoSession('helper', 'Community Helper');
 
     if (!session || !helperMode.isAvailable) {
       return null;
@@ -86,7 +93,7 @@ export default function HelperDispatchRuntime() {
         return;
       }
 
-      registerSocketUser(session.userId, 'victim', session.name);
+      registerSocketUser(session.userId, 'helper', session.name);
 
       try {
         await syncDemoSession(session, { isHelperAvailable: true });

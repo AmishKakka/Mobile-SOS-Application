@@ -24,6 +24,14 @@ const h3    = require('h3-js');
 
 const redis = new Redis({ host: process.env.REDIS_HOST || '127.0.0.1', port: 6379 });
 const H3_RESOLUTION = 9;
+const LAST_LOCATION_TTL_SECONDS = Math.max(
+  60,
+  Number(process.env.REDIS_LAST_LOCATION_TTL_SECONDS || 900),
+);
+const HELPER_STATUS_TTL_SECONDS = Math.max(
+  60,
+  Number(process.env.REDIS_HELPER_STATUS_TTL_SECONDS || 900),
+);
 
 // How often the simulation ticks (ms). Each tick moves the helper ~300m.
 const TICK_MS = 5000;
@@ -77,23 +85,28 @@ function movePoint(lat, lng, distanceMeters, headingDeg) {
 
 /**
  *
- *   SADD  active-users:{h3Cell}   userId
- *   HSET  last-location:{userId}  lat  long  region
+ *   SADD  active-users:{h3Cell}         userId
+ *   HSET  last-location:{userId}        lat  long  region  lastUpdated
+ *   HSET  helper-status:{userId}        role  isAvailable  region  lastUpdated
+ *   SADD  available-helpers:{h3Cell}    userId
  *
  * If the helper moved to a NEW h3 cell, removes them from the old cell's SET first.
  */
 async function writeHelperToRedis(helper, oldH3Cell = null) {
   const h3Cell = h3.latLngToCell(helper.lat, helper.lng, H3_RESOLUTION);
+  const now = String(Date.now());
 
   const pipeline = redis.multi();
 
   // Remove from old cell if they crossed an H3 boundary
   if (oldH3Cell && oldH3Cell !== h3Cell) {
     pipeline.srem(`active-users:${oldH3Cell}`, helper.userId);
+    pipeline.srem(`available-helpers:${oldH3Cell}`, helper.userId);
   }
 
   // Add to current cell's SET (SADD is idempotent — safe to call every tick)
   pipeline.sadd(`active-users:${h3Cell}`, helper.userId);
+  pipeline.sadd(`available-helpers:${h3Cell}`, helper.userId);
 
   // Store full location details for distance calculation
   pipeline.hset(`last-location:${helper.userId}`, {
@@ -101,7 +114,17 @@ async function writeHelperToRedis(helper, oldH3Cell = null) {
     long:   helper.lng.toString(),
     region: h3Cell,
     name:   helper.name,
+    lastUpdated: now,
   });
+  pipeline.expire(`last-location:${helper.userId}`, LAST_LOCATION_TTL_SECONDS);
+
+  pipeline.hset(`helper-status:${helper.userId}`, {
+    role: 'helper',
+    isAvailable: 'true',
+    region: h3Cell,
+    lastUpdated: now,
+  });
+  pipeline.expire(`helper-status:${helper.userId}`, HELPER_STATUS_TTL_SECONDS);
 
   await pipeline.exec();
   return h3Cell;

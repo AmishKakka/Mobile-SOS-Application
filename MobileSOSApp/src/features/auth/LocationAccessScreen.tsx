@@ -6,6 +6,7 @@ import {
   ActivityIndicator,
   Alert,
   SafeAreaView,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -56,7 +57,12 @@ export default function LocationAccessScreen({ navigation }: LocationAccessScree
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.content}>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+        bounces={false}
+      >
         <View style={styles.iconRow}>
           <View style={styles.blueIcon}>
             <Send color="#3B82F6" size={36} />
@@ -104,14 +110,15 @@ export default function LocationAccessScreen({ navigation }: LocationAccessScree
             <Text style={styles.skipButtonText}>Skip for now</Text>
           </TouchableOpacity>
         </View>
-      </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#FFF' },
-  content: { flex: 1, padding: 32, alignItems: 'center', justifyContent: 'center' },
+  scroll: { flex: 1 },
+  content: { flexGrow: 1, padding: 32, alignItems: 'center', justifyContent: 'center' },
   iconRow: { flexDirection: 'row', marginBottom: 25 },
   blueIcon: {
     backgroundColor: '#EFF6FF',
@@ -136,6 +143,7 @@ const styles = StyleSheet.create({
     lineHeight: 24,
     fontSize: 15,
     fontWeight: '500',
+    flexShrink: 1,
   },
   warningBox: {
     flexDirection: 'row',

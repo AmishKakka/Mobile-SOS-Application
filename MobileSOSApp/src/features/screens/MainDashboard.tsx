@@ -18,6 +18,7 @@ import MapView, { Circle, Marker, Polyline, PROVIDER_GOOGLE } from 'react-native
 import Geolocation from 'react-native-geolocation-service';
 
 import {
+  getStoredDemoSession,
   getOrCreateDemoSession,
 } from '../../services/demoSession';
 import { GOOGLE_MAPS_API_KEY } from '../../config/keys';
@@ -132,10 +133,15 @@ export default function MainDashboard({ navigation }: MainDashboardProps) {
 
         setSession(demoSession);
         registerSocketUser(demoSession.userId, demoSession.role, demoSession.name);
-        await restoreCommunityAvailability();
+        const helperAvailability = await restoreCommunityAvailability();
         try {
-          await registerDeviceForPush(demoSession);
-          unsubscribeTokenRefresh = subscribeToTokenRefresh(demoSession);
+          const helperSession = await getStoredDemoSession('helper');
+          const pushSession =
+            helperAvailability.isAvailable && helperSession
+              ? helperSession
+              : demoSession;
+          await registerDeviceForPush(pushSession);
+          unsubscribeTokenRefresh = subscribeToTokenRefresh(pushSession);
         } catch (pushError) {
           console.warn('[FCM] Push setup skipped on victim app:', pushError);
         }
@@ -274,6 +280,16 @@ export default function MainDashboard({ navigation }: MainDashboardProps) {
     trigger911Call().catch(() => undefined);
   }, [isEscalated]);
 
+  const helperPreview = useMemo(() => helpers.slice(0, 5), [helpers]);
+  const assignedHelpers = useMemo(
+    () => helpers.filter((helper) => assignedHelperIds.includes(helper.userId)),
+    [assignedHelperIds, helpers],
+  );
+  const primaryAssignedHelper = useMemo(
+    () => assignedHelpers[0] ?? null,
+    [assignedHelpers],
+  );
+
   useEffect(() => {
     if (!currentLocation || !mapRef.current) {
       return;
@@ -318,16 +334,6 @@ export default function MainDashboard({ navigation }: MainDashboardProps) {
     }
     return `Active for ${timerCount}s`;
   }, [isSearching, timerCount]);
-
-  const helperPreview = useMemo(() => helpers.slice(0, 5), [helpers]);
-  const assignedHelpers = useMemo(
-    () => helpers.filter((helper) => assignedHelperIds.includes(helper.userId)),
-    [assignedHelperIds, helpers],
-  );
-  const primaryAssignedHelper = useMemo(
-    () => assignedHelpers[0] ?? null,
-    [assignedHelpers],
-  );
 
   useEffect(() => {
     let cancelled = false;

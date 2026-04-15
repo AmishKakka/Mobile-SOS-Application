@@ -1,10 +1,17 @@
 const h3 = require('h3-js');
 const User = require('../models/User');
+const { HELPER_STATUS_TTL_SECONDS } = require('./helperAvailabilityIndex');
 
 const MAX_RINGS = Number(process.env.SOS_MAX_RINGS || 11);
 const MAX_HELPERS = Number(process.env.SOS_MAX_HELPERS || 5);
 const H3_RESOLUTION = Number(process.env.H3_RESOLUTION || 9);
 const MAX_RADIUS_METERS = Number(process.env.SOS_MAX_RADIUS_METERS || 2000);
+const LAST_LOCATION_TTL_SECONDS = Math.max(
+  60,
+  Number(process.env.REDIS_LAST_LOCATION_TTL_SECONDS || 900),
+);
+const HELPER_STATUS_FRESHNESS_MS = HELPER_STATUS_TTL_SECONDS * 1000;
+const LAST_LOCATION_FRESHNESS_MS = LAST_LOCATION_TTL_SECONDS * 1000;
 
 function estimateRadiusForRing(victimCell, ring) {
   if (!victimCell || ring <= 0) {
@@ -24,6 +31,119 @@ function estimateRadiusForRing(victimCell, ring) {
     250,
     Math.round(calculateDistance(victimLat, victimLng, ringLat, ringLng) + 150),
   );
+}
+
+function parseTimestampMs(value) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+async function resolveEligibleHelpers(
+  victimLat,
+  victimLng,
+  redisClient,
+  helperIds,
+  helperSourceCells,
+) {
+  if (!helperIds.size) {
+    return [];
+  }
+
+  const candidateIds = [...helperIds];
+  const locationPipeline = redisClient.multi();
+  const statusPipeline = redisClient.multi();
+
+  for (const helperId of candidateIds) {
+    locationPipeline.hgetall(`last-location:${helperId}`);
+    statusPipeline.hgetall(`helper-status:${helperId}`);
+  }
+
+  const [locationResults, statusResults, helperDocs] = await Promise.all([
+    locationPipeline.exec(),
+    statusPipeline.exec(),
+    User.find({
+      _id: { $in: candidateIds },
+      role: 'helper',
+      isHelperAvailable: true,
+    })
+      .select('_id name role isHelperAvailable')
+      .lean(),
+  ]);
+
+  const helperDocMap = new Map(helperDocs.map((doc) => [String(doc._id), doc]));
+  const helpers = [];
+  const cleanupPipeline = redisClient.multi();
+  let cleanupCount = 0;
+  const now = Date.now();
+
+  for (let i = 0; i < candidateIds.length; i += 1) {
+    const helperId = candidateIds[i];
+    const sourceCell = helperSourceCells.get(helperId);
+    const [locationError, locationData] = locationResults[i] || [];
+    const [statusError, statusData] = statusResults[i] || [];
+    const helperDoc = helperDocMap.get(helperId);
+
+    const scheduleRemoval = () => {
+      if (sourceCell) {
+        cleanupPipeline.srem(`available-helpers:${sourceCell}`, helperId);
+        cleanupCount += 1;
+      }
+    };
+
+    if (locationError || statusError || !helperDoc) {
+      scheduleRemoval();
+      continue;
+    }
+
+    const statusTimestamp = parseTimestampMs(statusData?.lastUpdated);
+    const locationTimestamp = parseTimestampMs(locationData?.lastUpdated);
+    const statusFresh = statusTimestamp !== null && now - statusTimestamp <= HELPER_STATUS_FRESHNESS_MS;
+    const locationFresh = locationTimestamp !== null && now - locationTimestamp <= LAST_LOCATION_FRESHNESS_MS;
+
+    if (
+      !statusData
+      || statusData.role !== 'helper'
+      || statusData.isAvailable !== 'true'
+      || !statusData.region
+      || !statusFresh
+      || !locationData?.lat
+      || !locationData?.long
+      || !locationData?.region
+      || !locationFresh
+      || locationData.region !== statusData.region
+    ) {
+      scheduleRemoval();
+      continue;
+    }
+
+    if (sourceCell && sourceCell !== statusData.region) {
+      scheduleRemoval();
+      continue;
+    }
+
+    const lat = Number.parseFloat(locationData.lat);
+    const lng = Number.parseFloat(locationData.long);
+
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      scheduleRemoval();
+      continue;
+    }
+
+    helpers.push({
+      userId: helperId,
+      name: helperDoc.name || helperId,
+      lat,
+      long: lng,
+      distance: calculateDistance(victimLat, victimLng, lat, lng),
+    });
+  }
+
+  if (cleanupCount > 0) {
+    await cleanupPipeline.exec();
+  }
+
+  helpers.sort((a, b) => a.distance - b.distance);
+  return helpers;
 }
 
 async function triggerSOS(victimLat, victimLng, rejectIds = [], redisClient, options = {}) {
@@ -52,9 +172,11 @@ async function triggerSOS(victimLat, victimLng, rejectIds = [], redisClient, opt
   const rejected = new Set(rejectIds.map(String));
   const victimCell = h3.latLngToCell(victimLat, victimLng, H3_RESOLUTION);
   const helperIds = new Set();
+  const helperSourceCells = new Map();
   let searchedRing = 0;
   let radiusMeters = 250;
   let maxRadiusReached = false;
+  let eligibleHelpers = [];
 
   for (let ring = 0; ring <= maxRing; ring += 1) {
     const estimatedRadius = estimateRadiusForRing(victimCell, ring);
@@ -69,20 +191,36 @@ async function triggerSOS(victimLat, victimLng, rejectIds = [], redisClient, opt
     const cells = ring === 0 ? [victimCell] : h3.gridRing(victimCell, ring);
 
     for (const cell of cells) {
-      const activeHelpers = await redisClient.smembers(`active-users:${cell}`);
+      const activeHelpers = await redisClient.smembers(`available-helpers:${cell}`);
       activeHelpers
         .filter((userId) => !rejected.has(String(userId)))
-        .forEach((userId) => helperIds.add(String(userId)));
+        .forEach((userId) => {
+          const normalizedId = String(userId);
+          helperIds.add(normalizedId);
+          if (!helperSourceCells.has(normalizedId)) {
+            helperSourceCells.set(normalizedId, cell);
+          }
+        });
     }
 
-    if (helperIds.size >= minResults) break;
+    if (helperIds.size > 0) {
+      eligibleHelpers = await resolveEligibleHelpers(
+        victimLat,
+        victimLng,
+        redisClient,
+        helperIds,
+        helperSourceCells,
+      );
+    }
+
+    if (eligibleHelpers.length >= minResults) break;
   }
 
   if (searchedRing >= MAX_RINGS || radiusMeters >= maxRadiusMeters) {
     maxRadiusReached = true;
   }
 
-  if (helperIds.size === 0) {
+  if (eligibleHelpers.length === 0) {
     return {
       helpers: [],
       searchedRing,
@@ -91,47 +229,8 @@ async function triggerSOS(victimLat, victimLng, rejectIds = [], redisClient, opt
     };
   }
 
-  const pipeline = redisClient.multi();
-  for (const helperId of helperIds) {
-    pipeline.hgetall(`last-location:${helperId}`);
-  }
-
-  const [locationResults, helperDocs] = await Promise.all([
-    pipeline.exec(),
-    User.find({
-      _id: { $in: [...helperIds] },
-      isHelperAvailable: true,
-    })
-      .select('_id name isHelperAvailable')
-      .lean(),
-  ]);
-
-  const helperDocMap = new Map(helperDocs.map(doc => [String(doc._id), doc]));
-  const helpers = [];
-
-  for (let i = 0; i < locationResults.length; i++) {
-    const helperId = [...helperIds][i];
-    const [error, locationData] = locationResults[i] || [];
-    if (error || !locationData?.lat || !locationData?.long) continue;
-
-    const helperDoc = helperDocMap.get(helperId);
-    if (!helperDoc) continue;   // Victim or non-helper is filtered out here
-
-    const lat = Number.parseFloat(locationData.lat);
-    const lng = Number.parseFloat(locationData.long);
-
-    helpers.push({
-      userId: helperId,
-      name: helperDoc.name || helperId,
-      lat,
-      long: lng,
-      distance: calculateDistance(victimLat, victimLng, lat, lng),
-    });
-  }
-
-  helpers.sort((a, b) => a.distance - b.distance);
   return {
-    helpers: helpers.slice(0, maxResults),
+    helpers: eligibleHelpers.slice(0, maxResults),
     searchedRing,
     radiusMeters,
     maxRadiusReached,

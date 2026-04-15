@@ -31,15 +31,6 @@ export interface SOSActions {
   cancelSOS: () => void;
 }
 
-function computeVisualRadius(helpers: HelperLocation[]) {
-  if (!helpers.length) {
-    return 250;
-  }
-
-  const farthest = Math.max(...helpers.map((helper) => helper.distanceMeters || 0));
-  return Math.max(250, Math.min(2000, Math.ceil((farthest + 100) / 50) * 50));
-}
-
 export function useSOS({
   userId,
   currentLocation,
@@ -123,7 +114,6 @@ export function useSOS({
       }));
 
       setHelpers(mapped);
-      setSearchRadius(computeVisualRadius(mapped));
       setStatusMessage(
         mapped.length
           ? `${mapped.length} helper${mapped.length > 1 ? 's' : ''} found nearby.`

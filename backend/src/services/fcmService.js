@@ -32,8 +32,12 @@ async function alertHelpersViaFCM(helpersToNotify, incident) {
 
   try {
     const helperIds = helpersToNotify.map((helper) => helper.userId);
-    const users = await User.find({ _id: { $in: helperIds } })
-      .select('_id fcmToken name')
+    const users = await User.find({
+      _id: { $in: helperIds },
+      role: 'helper',
+      isHelperAvailable: true,
+    })
+      .select('_id fcmToken name role isHelperAvailable')
       .lean();
 
     const tokenRows = users

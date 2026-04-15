@@ -7,6 +7,7 @@ const Redis = require('ioredis');
 const mongoose = require('mongoose');
 const initializeSocket = require('./sockets/socket');
 const User = require('./models/User');
+const { syncHelperAvailabilityIndex } = require('./services/helperAvailabilityIndex');
 
 const REQUIRED_ENV = ['MONGO_URI'];
 const missing = REQUIRED_ENV.filter((key) => !process.env[key]);
@@ -94,6 +95,12 @@ app.put('/users/:userId/device', async (req, res) => {
       { new: true, upsert: true, setDefaultsOnInsert: true }
     ).lean();
 
+    try {
+      await syncHelperAvailabilityIndex(redisClient, user);
+    } catch (redisError) {
+      console.error('[API] Failed to sync helper availability to Redis:', redisError);
+    }
+
     return res.status(200).json(user);
   } catch (error) {
     console.error('[API] Failed to upsert device/user profile:', error);
@@ -133,6 +140,12 @@ app.put('/users/:userId/status', async (req, res) => {
       { $set: update, $setOnInsert: { _id: userId } },
       { new: true, upsert: true, setDefaultsOnInsert: true }
     ).lean();
+
+    try {
+      await syncHelperAvailabilityIndex(redisClient, user);
+    } catch (redisError) {
+      console.error('[API] Failed to sync helper status to Redis:', redisError);
+    }
 
     return res.status(200).json(user);
   } catch (error) {

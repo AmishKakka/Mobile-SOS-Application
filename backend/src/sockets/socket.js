@@ -5,8 +5,13 @@ const admin = require('firebase-admin');
 const { triggerSOS } = require('../services/dynamicProximitySearch');
 const { alertHelpersViaFCM, alertEmergencyContacts } = require('../services/fcmService');
 const User = require('../models/User');
+const { HELPER_STATUS_TTL_SECONDS } = require('../services/helperAvailabilityIndex');
 
 const H3_RESOLUTION = Number(process.env.H3_RESOLUTION || 9);
+const LAST_LOCATION_TTL_SECONDS = Math.max(
+  60,
+  Number(process.env.REDIS_LAST_LOCATION_TTL_SECONDS || 900),
+);
 const DISPATCH_TIMEOUT_MS = Number(process.env.SOS_DISPATCH_TIMEOUT_MS || 30000);
 const NOTIFY_BATCH_SIZE = Number(process.env.SOS_NOTIFY_BATCH_SIZE || 5);
 const MAX_SEARCH_RING = Number(process.env.SOS_MAX_RINGS || 11);
@@ -408,7 +413,10 @@ async function upsertLiveLocation(redisClient, userId, location) {
   const lat = Number(location.lat);
   const lng = Number(location.lng);
   const newCell = h3.latLngToCell(lat, lng, H3_RESOLUTION);
-  const previous = await redisClient.hgetall(`last-location:${userId}`);
+  const [previous, helperStatus] = await Promise.all([
+    redisClient.hgetall(`last-location:${userId}`),
+    redisClient.hgetall(`helper-status:${userId}`),
+  ]);
   const pipeline = redisClient.multi();
 
   if (previous && previous.region && previous.region !== newCell) {
@@ -422,6 +430,32 @@ async function upsertLiveLocation(redisClient, userId, location) {
     region: newCell,
     lastUpdated: String(Date.now()),
   });
+  pipeline.expire(`last-location:${userId}`, LAST_LOCATION_TTL_SECONDS);
+
+  if (helperStatus && Object.keys(helperStatus).length > 0) {
+    const helperRole = helperStatus.role || 'victim';
+    const helperAvailable = helperStatus.isAvailable === 'true';
+    const previousHelperRegion = helperStatus.region || '';
+    const isEligibleHelper = helperRole === 'helper' && helperAvailable;
+
+    pipeline.hset(`helper-status:${userId}`, {
+      role: helperRole,
+      isAvailable: helperAvailable ? 'true' : 'false',
+      region: newCell,
+      lastUpdated: String(Date.now()),
+    });
+    pipeline.expire(`helper-status:${userId}`, HELPER_STATUS_TTL_SECONDS);
+
+    if (previousHelperRegion && previousHelperRegion !== newCell) {
+      pipeline.srem(`available-helpers:${previousHelperRegion}`, userId);
+    }
+
+    if (isEligibleHelper) {
+      pipeline.sadd(`available-helpers:${newCell}`, userId);
+    } else if (previousHelperRegion) {
+      pipeline.srem(`available-helpers:${previousHelperRegion}`, userId);
+    }
+  }
 
   await pipeline.exec();
 }
