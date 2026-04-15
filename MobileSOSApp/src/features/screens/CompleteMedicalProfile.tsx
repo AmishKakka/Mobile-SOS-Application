@@ -1,7 +1,7 @@
 import type { ParamListBase } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { API_BASE_URL } from '../../config/config';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { fetchAuthSession } from 'aws-amplify/auth';
 import React, { useState } from 'react';
 import {
     KeyboardAvoidingView,
@@ -29,8 +29,8 @@ export default function CompleteMedicalProfile({ navigation }: CompleteMedicalPr
 
     const handleSave = async () => {
         try {
-            const token = await AsyncStorage.getItem('userToken');
-
+            const session = await fetchAuthSession();
+            const token = session.tokens?.idToken?.toString();
             const formattedMedicalData = {
                 // Send it as 'bloodGroup' and force it to be uppercase so Mongoose accepts it!
                 bloodGroup: medicalData.bloodType ? medicalData.bloodType.trim().toUpperCase() : null,

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, StyleSheet, TouchableOpacity, ScrollView, SafeAreaView, Alert, ActivityIndicator } from 'react-native';
 import { API_BASE_URL } from '../../config/config';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { fetchAuthSession } from 'aws-amplify/auth';
 
 type Contact = { _id?: string; id?: string; name: string; phone: string; relation?: string };
 type NavigationLike = { navigate: (screen: string) => void; replace: (screen: string) => void };
@@ -17,7 +17,9 @@ const EmergencyContactsScreen: React.FC<Props> = ({ navigation }) => {
   useEffect(() => {
     const fetchContacts = async () => {
       try {
-        const token = await AsyncStorage.getItem('userToken');
+        const session = await fetchAuthSession();
+        const token = session.tokens?.idToken?.toString();
+
         if (!token) return;
 
         const response = await fetch(`${API_BASE_URL}/users/profile`, {
@@ -66,7 +68,8 @@ const EmergencyContactsScreen: React.FC<Props> = ({ navigation }) => {
  // SAVE CONTACTS TO MONGODB (Seamless Transition)
   const handleSave = async () => {
     try {
-      const token = await AsyncStorage.getItem('userToken');
+      const session = await fetchAuthSession();
+      const token = session.tokens?.idToken?.toString();
       
       const response = await fetch(`${API_BASE_URL}/users/profile`, {
         method: 'PUT',

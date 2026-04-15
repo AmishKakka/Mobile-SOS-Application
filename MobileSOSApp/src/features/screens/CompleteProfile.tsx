@@ -1,7 +1,7 @@
 import type { ParamListBase } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { API_BASE_URL } from '../../config/config';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { fetchAuthSession } from 'aws-amplify/auth';
 import React, { useState } from 'react';
 import {
     KeyboardAvoidingView,
@@ -32,7 +32,9 @@ export default function CompleteProfile({ navigation }: CompleteProfileProps) {
     const handleNext = async () => {
         try {
             // RETRIEVE THE TOKEN FROM THE PHONE
-            const token = await AsyncStorage.getItem('userToken');
+            const session = await fetchAuthSession();
+            // This extracts the secure AWS JWT token to send to your Express server
+            const token = session.tokens?.idToken?.toString();
 
             if (!token) {
                 console.error("No token found. User might not be logged in.");

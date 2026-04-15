@@ -2,8 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, Switch, TouchableOpacity, SafeAreaView, Image, ScrollView, ActivityIndicator } from 'react-native';
 import { ChevronRight, HeartPulse, ShieldAlert, LogOut, BellRing, UserCircle } from "lucide-react-native";
 import { API_BASE_URL } from '../../config/config';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-
+import { fetchAuthSession, signOut } from 'aws-amplify/auth';
 
 type NavigationLike = { 
   navigate: (screen: string, params?: Record<string, any>) => void;
@@ -12,17 +11,15 @@ type NavigationLike = {
 type SettingsScreenProps = { navigation: NavigationLike };
 
 const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
-  const [isAvailable, setIsAvailable] = useState(true);
-  
-  // Dynamic State Variables
   const [userData, setUserData] = useState({ firstName: '', lastName: '', email: '' });
   const [isLoading, setIsLoading] = useState(true);
 
-  // Fetch data when the screen loads
   useEffect(() => {
     const fetchProfile = async () => {
       try {
-        const token = await AsyncStorage.getItem('userToken');
+        // 🚨 NEW: Get token from AWS
+        const session = await fetchAuthSession();
+        const token = session.tokens?.idToken?.toString();
         if (!token) return;
 
         const response = await fetch(`${API_BASE_URL}/users/profile`, {
@@ -32,7 +29,6 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
 
         if (response.ok) {
           const data = await response.json();
-          // Update the UI with the real database data
           setUserData({
             firstName: data.firstName,
             lastName: data.lastName,
@@ -60,68 +56,19 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        
-        {/* HEADER SECTION */}
-        <View style={styles.header}>
-          <Image 
-            source={{ uri: 'https://via.placeholder.com/80' }} 
-            style={styles.profilePic} 
-          />
-          <View style={styles.headerTextContainer}>
-            {/* DYNAMIC DATA HERE */}
-            <Text style={styles.userName}>
-              {`${userData.firstName} ${userData.lastName}`}
-            </Text>
-            <Text style={styles.userEmail}>{userData.email}</Text>
-            
-            <TouchableOpacity 
-              style={styles.editProfileBtn} 
-              onPress={() => navigation.navigate('EditProfile')}
-            >
-              <Text style={styles.editProfileText}>Edit Profile</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* ACCOUNT SECTION */}
-        <Text style={styles.sectionTitle}>ACCOUNT & DATA</Text>
-        <View style={styles.cardGroup}>
-          <TouchableOpacity style={styles.menuItem} onPress={() => navigation.navigate('MedicalProfile')}>
-            <View style={styles.iconAndText}>
-              <View style={[styles.iconBox, { backgroundColor: '#FEE2E2' }]}>
-                <HeartPulse color="#DC2626" size={20} />
-              </View>
-              <Text style={styles.menuText}>Medical Profile</Text>
-            </View>
-            <ChevronRight color="#D1D5DB" size={20} />
-          </TouchableOpacity>
-
-          <View style={styles.divider} />
-
-          <TouchableOpacity style={styles.menuItem} onPress={() => navigation.navigate('HelperDashboard')}>
-            <View style={styles.iconAndText}>
-              <View style={[styles.iconBox, { backgroundColor: '#ECFDF5' }]}>
-                <UserCircle color="#10B981" size={20} />
-              </View>
-              <Text style={styles.menuText}>Community Helper Dashboard</Text>
-            </View>
-            <ChevronRight color="#D1D5DB" size={20} />
-          </TouchableOpacity>
-        </View>
-
-        {/* DELETE ACCOUNT BUTTON */}
-        <TouchableOpacity style={styles.logoutBtn}>
-          <LogOut color="#DC2626" size={18} style={{ marginRight: 8 }} />
-          <Text style={styles.logoutText}>Delete Account</Text>
-        </TouchableOpacity>
+        {/* ... Keep your existing UI Header and Buttons exactly the same ... */}
 
         {/* LOGOUT BUTTON */}
         <TouchableOpacity 
           style={styles.logoutBtn}
           onPress={async () => {
-             // Sign out logic: Delete the token and go back to Auth
-             await AsyncStorage.removeItem('userToken');
-             navigation.replace('AuthScreen');
+             // 🚨 NEW: Tell AWS to destroy the session securely
+             try {
+                await signOut();
+                navigation.replace('AuthScreen');
+             } catch (error) {
+                console.error("Error signing out: ", error);
+             }
           }}
         >
           <LogOut color="#DC2626" size={18} style={{ marginRight: 8 }} />

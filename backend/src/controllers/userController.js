@@ -1,119 +1,55 @@
-const User = require('../models/User.js'); // Assuming your Mongoose schema is saved here
-const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
+const User = require('../models/User.js');
 
-
-// CREATE: Register a new user (AuthScreen.tsx)
+// CREATE: Sync a new AWS Cognito user into the MongoDB database
 exports.registerUser = async (req, res) => {
     try {
-        const { firstName, lastName, email, password } = req.body;
+        // The frontend will pass this data right after AWS confirms the email
+        const { firstName, lastName, email, cognitoId } = req.body;
 
-        const passwordRegex = /^(?=.*[0-9])(?=.*[!@#$%^&*(),.?":{}|<>]).{8,16}$/;
-        if (!passwordRegex.test(password)) {
-            return res.status(400).json({ 
-                message: 'Password must be 8-16 characters long and include at least one number and one symbol.' 
-            });
+        if (!cognitoId) {
+            return res.status(400).json({ message: "Missing AWS Cognito ID." });
         }
 
-        //Check if user already exists
+        // Check if user already exists
         let user = await User.findOne({ email });
         if (user) {
-            return res.status(400).json({ message: "Email already in use." });
+            return res.status(400).json({ message: "User database profile already exists." });
         }
 
-        //Hash the password
-        const salt = await bcrypt.genSalt(10);
-        const passwordHash = await bcrypt.hash(password, salt);
-
-        //Create the new user object and save to database
+        // Create the new user object and save to database
         user = new User({
+            cognitoId,
             firstName,
             lastName,
             email,
-            passwordHash,
-            role: "BOTH", // Default role
-            status: { isActive: true, isVerified: false }
+            role: "BOTH", 
+            status: { isActive: true, isVerified: true }
         });
 
         await user.save();
 
-        //Generate JWT Token
-        const payload = {
-            user: { id: user._id }
-        };
-
-        jwt.sign(
-            payload,
-            process.env.JWT_SECRET || 'fallback_secret_key',
-            { expiresIn: '30d' }, //Token valid for 30 days
-            (err, token) => {
-                if (err) throw err;
-                res.status(201).json({ 
-                    message: "User registered successfully", 
-                    token, 
-                    userId: user._id 
-                });
-            }
-        );
+        res.status(201).json({ 
+            message: "User profile synced to MongoDB successfully", 
+            userId: user._id 
+        });
     } catch (error) {
-        console.error("Registration Error:", error.message);
-        res.status(500).json({ error: "Server error during registration" });
+        console.error("Database Registration Error:", error.message);
+        res.status(500).json({ error: "Server error during MongoDB sync" });
     }
 };
 
 
-
-// CREATE: Login an existing user
-exports.loginUser = async (req, res) => {
-    try {
-        const { email, password } = req.body;
-
-        // 1. Check if user exists
-        const user = await User.findOne({ email });
-        if (!user) {
-            return res.status(400).json({ message: "Invalid email or password." });
-        }
-
-        // 2. Compare the provided password with the hashed database password
-        const isMatch = await bcrypt.compare(password, user.passwordHash);
-        if (!isMatch) {
-            return res.status(400).json({ message: "Invalid email or password." });
-        }
-
-        // 3. Generate the exact same JWT token structure as Registration
-        const payload = {
-            user: { id: user._id }
-        };
-
-        jwt.sign(
-            payload,
-            process.env.JWT_SECRET || 'fallback_secret_key',
-            { expiresIn: '30d' },
-            (err, token) => {
-                if (err) throw err;
-                res.status(200).json({ 
-                    message: "Login successful", 
-                    token, 
-                    userId: user._id 
-                });
-            }
-        );
-    } catch (error) {
-        console.error("Login Error:", error.message);
-        res.status(500).json({ error: "Server error during login" });
-    }
-};
+// 🚨 loginUser HAS BEEN DELETED. AWS Cognito handles logins directly on the phone! 🚨
 
 
 // READ: Get User Profile (Settings Dashboard)
-
 exports.getUserProfile = async (req, res) => {
     try {
-        //req.user.id is provided by the auth.js middleware
-        const user = await User.findById(req.user.id).select('-passwordHash');
+        // req.user.cognitoId is provided by the AWS auth.js middleware
+        const user = await User.findOne({ cognitoId: req.user.cognitoId });
         
         if (!user) {
-            return res.status(404).json({ message: "User not found" });
+            return res.status(404).json({ message: "User database profile not found" });
         }
 
         res.status(200).json(user);
@@ -125,22 +61,20 @@ exports.getUserProfile = async (req, res) => {
 
 
 // UPDATE: Dynamic Profile Update (Complete Profile & Medical)
-
 exports.updateProfile = async (req, res) => {
     try {
-        const userId = req.user.id;
         const updateData = req.body;
 
-        // Security check: Prevent users from updating their password or ID via this route
-        delete updateData.passwordHash;
+        // Security check: Prevent users from overriding their IDs
+        delete updateData.cognitoId;
         delete updateData._id;
 
-        // findByIdAndUpdate with $set dynamically applies whatever fields the React Native app sends
-        const updatedUser = await User.findByIdAndUpdate(
-            userId,
+        // Find the user by their AWS ID and update
+        const updatedUser = await User.findOneAndUpdate(
+            { cognitoId: req.user.cognitoId },
             { $set: updateData },
             { new: true, runValidators: true } 
-        ).select('-passwordHash');
+        );
 
         if (!updatedUser) {
             return res.status(404).json({ message: "User not found" });
@@ -157,33 +91,20 @@ exports.updateProfile = async (req, res) => {
 };
 
 
-// DELETE: Account Deletion with Double Verification
-
+// DELETE: Account Deletion
 exports.deleteAccount = async (req, res) => {
     try {
-        const userId = req.user.id;
-        const { password } = req.body; 
-
-        if (!password) {
-            return res.status(400).json({ message: "Password is required to delete account." });
-        }
-
-        //Find user to get the password hash
-        const user = await User.findById(userId);
+        // Because AWS handles passwords, we don't ask for a password here anymore.
+        // Instead, the frontend should force the user to re-authenticate with AWS 
+        // before they are allowed to press the Delete Account button.
+        
+        const user = await User.findOneAndDelete({ cognitoId: req.user.cognitoId });
+        
         if (!user) {
             return res.status(404).json({ message: "User not found" });
         }
 
-        //Verify the provided password matches the database
-        const isMatch = await bcrypt.compare(password, user.passwordHash);
-        if (!isMatch) {
-            return res.status(401).json({ message: "Incorrect password. Account deletion aborted." });
-        }
-
-        //Delete the user
-        await User.findByIdAndDelete(userId);
-
-        res.status(200).json({ message: "Account permanently deleted." });
+        res.status(200).json({ message: "Account profile permanently deleted from MongoDB." });
     } catch (error) {
         console.error("Delete Account Error:", error.message);
         res.status(500).json({ error: "Server error deleting account" });

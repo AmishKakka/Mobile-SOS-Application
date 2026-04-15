@@ -1,26 +1,34 @@
-const jwt = require('jsonwebtoken');
+const { CognitoJwtVerifier } = require("aws-jwt-verify");
 
-module.exports = function (req, res, next) {
-    //Get the token from the request header (Format: "Bearer <token>")
+// Initialize the AWS verifier
+const verifier = CognitoJwtVerifier.create({
+    userPoolId: process.env.COGNITO_USER_POOL_ID || 'your_pool_id',
+    tokenUse: "id", // AWS Cognito ID tokens
+    clientId: process.env.COGNITO_CLIENT_ID || 'your_client_id',
+});
+
+module.exports = async function (req, res, next) {
+    // Get the token from the request header (Format: "Bearer <token>")
     const authHeader = req.header('Authorization');
     
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
         return res.status(401).json({ message: 'No token, authorization denied' });
     }
 
-    //Extract the actual token string
+    // Extract the actual token string
     const token = authHeader.split(' ')[1];
 
     try {
-        //Verify the token using secret key
-        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback_secret_key');
+        // AWS mathematically verifies the token signature in milliseconds
+        const payload = await verifier.verify(token);
 
-        //Attach the decoded user payload (which contains the user ID) to the request object
-        req.user = decoded.user;
+        // Attach the unique AWS user ID ('sub') to the request object
+        req.user = { cognitoId: payload.sub };
         
-        //Move to the next function (the controller)
+        // Move to the next function (the controller)
         next();
     } catch (error) {
-        res.status(401).json({ message: 'Token is not valid' });
+        console.error("AWS Token Verification Failed:", error.message);
+        res.status(401).json({ message: 'Token is not valid or has expired' });
     }
 };

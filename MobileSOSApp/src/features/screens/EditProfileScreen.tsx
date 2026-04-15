@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, StyleSheet, TouchableOpacity, ScrollView, SafeAreaView, Image, ActivityIndicator, Alert } from 'react-native';
 import { API_BASE_URL } from '../../config/config';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { fetchAuthSession } from 'aws-amplify/auth';
 
 // Define navigation so we can go back to Settings after saving
 type NavigationLike = { goBack: () => void };
@@ -25,7 +25,8 @@ const EditProfileScreen: React.FC<Props> = ({ navigation }) => {
   useEffect(() => {
     const fetchProfile = async () => {
       try {
-        const token = await AsyncStorage.getItem('userToken');
+        const session = await fetchAuthSession();
+        const token = session.tokens?.idToken?.toString();
         if (!token) return;
 
         const response = await fetch(`${API_BASE_URL}/users/profile`, {
@@ -60,7 +61,8 @@ const EditProfileScreen: React.FC<Props> = ({ navigation }) => {
   // SAVE CHANGES TO MONGODB
   const handleSave = async () => {
     try {
-      const token = await AsyncStorage.getItem('userToken');
+      const session = await fetchAuthSession();
+      const token = session.tokens?.idToken?.toString();
       
       const response = await fetch(`${API_BASE_URL}/users/profile`, {
         method: 'PUT',

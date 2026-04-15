@@ -5,10 +5,10 @@ db.createCollection("users", {
       additionalProperties: false,
       required: [
         "_id",
+        "cognitoId", // 🚨 REPLACED passwordHash WITH AWS ID
         "firstName",
         "lastName",
         "email",
-        "passwordHash",
         "role",
         "status",
         "createdAt",
@@ -18,6 +18,10 @@ db.createCollection("users", {
         _id: {
           bsonType: "string",
           description: "User UUID must be a string and is required"
+        },
+        cognitoId: { // 🚨 NEW PROPERTY FOR AWS
+          bsonType: "string",
+          description: "AWS Cognito Unique ID is required"
         },
         firstName: {
           bsonType: "string",
@@ -41,10 +45,6 @@ db.createCollection("users", {
           bsonType: "string",
           maxLength: 254,
           description: "Email is optional but must be a string or null"
-        },
-        passwordHash: {
-          bsonType: "string",
-          description: "Hashed password is required"
         },
         address: {
           bsonType: ["string", "null"],

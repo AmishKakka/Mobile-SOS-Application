@@ -1,7 +1,7 @@
 import type { ParamListBase } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { API_BASE_URL } from '../../config/config';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { fetchAuthSession } from 'aws-amplify/auth';
 import React, { useState, useEffect } from 'react';
 import {
     KeyboardAvoidingView,
@@ -34,7 +34,8 @@ export default function MedicalProfileScreen({ navigation }: MedicalProfileProps
     useEffect(() => {
         const fetchMedicalData = async () => {
             try {
-                const token = await AsyncStorage.getItem('userToken');
+                const session = await fetchAuthSession();
+                const token = session.tokens?.idToken?.toString();
                 if (!token) return;
 
                 const response = await fetch(`${API_BASE_URL}/users/profile`, {
@@ -69,7 +70,8 @@ export default function MedicalProfileScreen({ navigation }: MedicalProfileProps
     // 2. SAVE EDITED DATA
     const handleSave = async () => {
         try {
-            const token = await AsyncStorage.getItem('userToken');
+            const session = await fetchAuthSession();
+            const token = session.tokens?.idToken?.toString();
 
             // Convert the comma-separated text box strings back into neat Arrays for MongoDB
           const formattedMedicalData = {

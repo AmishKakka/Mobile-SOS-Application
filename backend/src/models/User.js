@@ -6,11 +6,14 @@ function arrayLimit(val) {
 }
 
 const userSchema = new mongoose.Schema({
+    // NEW: AWS Cognito Unique Identifier
+    cognitoId: { type: String, required: true, unique: true },
+
     // Auth & Basic Info
     firstName: { type: String, required: true, minlength: 1, maxlength: 120 },
     lastName: { type: String, required: true, minlength: 1, maxlength: 120 },
     email: { type: String, required: true, unique: true, maxlength: 254 },
-    passwordHash: { type: String, required: true },
+    // 🚨 passwordHash HAS BEEN DELETED! 🚨
 
     // Extended Profile
     phone: { type: String, maxlength: 20 },
@@ -41,13 +44,13 @@ const userSchema = new mongoose.Schema({
     role: { type: String, enum: ["PIN", "HELPER", "BOTH"], default: "BOTH" },
     status: {
         isActive: { type: Boolean, default: true },
-        isVerified: { type: Boolean, default: false }
+        isVerified: { type: Boolean, default: true } // Auto-true since AWS handles email verification
     },
     helperProfile: {
         isHelper: { type: Boolean, default: true },
         skills: [{ type: String }],
         isAvailableForSOS: { type: Boolean, default: true }
     }
-}, { timestamps: true }); // Automatically handles createdAt and updatedAt
+}, { timestamps: true }); 
 
 module.exports = mongoose.model('User', userSchema);
