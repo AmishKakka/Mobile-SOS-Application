@@ -1,9 +1,14 @@
 import React from 'react';
 import { SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import { getStatusTone, getTrackingSnapshot } from '../services/socket';
+import {
+  getStatusTone,
+  getTrackingOverview,
+  getTrackingSnapshot,
+} from '../services/socket';
 
 const snapshot = getTrackingSnapshot();
+const overview = getTrackingOverview(snapshot);
 
 export default function HelperMapScreen() {
   return (
@@ -24,6 +29,21 @@ export default function HelperMapScreen() {
             coverage radius.
           </Text>
           <Text style={styles.syncText}>{snapshot.lastSyncLabel}</Text>
+        </View>
+
+        <View style={styles.overviewRow}>
+          <View style={styles.overviewCard}>
+            <Text style={styles.overviewLabel}>Nearest ETA</Text>
+            <Text style={styles.overviewValue}>{overview.nearestEtaMinutes} min</Text>
+          </View>
+          <View style={styles.overviewCard}>
+            <Text style={styles.overviewLabel}>Arriving Soon</Text>
+            <Text style={styles.overviewValue}>{overview.arrivingSoonCount}</Text>
+          </View>
+          <View style={styles.overviewCard}>
+            <Text style={styles.overviewLabel}>Arrived</Text>
+            <Text style={styles.overviewValue}>{overview.arrivedCount}</Text>
+          </View>
         </View>
 
         <View style={styles.mapCard}>
@@ -136,6 +156,28 @@ const styles = StyleSheet.create({
     color: '#94a3b8',
     fontSize: 13,
     marginTop: 12,
+  },
+  overviewRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 16,
+  },
+  overviewCard: {
+    flex: 1,
+    backgroundColor: '#ffffff',
+    borderRadius: 18,
+    padding: 14,
+  },
+  overviewLabel: {
+    color: '#64748b',
+    fontSize: 12,
+    fontWeight: '600',
+    marginBottom: 8,
+  },
+  overviewValue: {
+    color: '#0f172a',
+    fontSize: 18,
+    fontWeight: '800',
   },
   mapCard: {
     backgroundColor: '#ffffff',

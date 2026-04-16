@@ -20,6 +20,12 @@ export type TrackingSnapshot = {
   helpers: HelperMarker[];
 };
 
+export type TrackingOverview = {
+  arrivingSoonCount: number;
+  arrivedCount: number;
+  nearestEtaMinutes: number;
+};
+
 const helperMarkers: HelperMarker[] = [
   {
     id: 'helper-1',
@@ -55,6 +61,30 @@ export function getTrackingSnapshot(): TrackingSnapshot {
     coverageRadiusMeters: 800,
     helperCount: helperMarkers.length,
     helpers: helperMarkers,
+  };
+}
+
+export function getTrackingOverview(
+  snapshot: TrackingSnapshot,
+): TrackingOverview {
+  const arrivingSoonCount = snapshot.helpers.filter(
+    (helper) => helper.status === 'en-route' || helper.status === 'available',
+  ).length;
+
+  const arrivedCount = snapshot.helpers.filter(
+    (helper) => helper.status === 'arrived',
+  ).length;
+
+  const nearestEtaMinutes = snapshot.helpers.reduce(
+    (fastestEta, helper) => Math.min(fastestEta, helper.etaMinutes),
+    Number.POSITIVE_INFINITY,
+  );
+
+  return {
+    arrivingSoonCount,
+    arrivedCount,
+    nearestEtaMinutes:
+      nearestEtaMinutes === Number.POSITIVE_INFINITY ? 0 : nearestEtaMinutes,
   };
 }
 
