@@ -378,7 +378,7 @@ export default function HelperTrackingScreen({ navigation, route: navRoute }: Pr
         <View style={styles.sheetHandle} />
         <ScrollView
           showsVerticalScrollIndicator={false}
-          bounces={false}
+          bounces={true}
           contentContainerStyle={styles.dashboardContent}
         >
           <View style={styles.responseHeader}>

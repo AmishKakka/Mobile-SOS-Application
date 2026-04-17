@@ -10,6 +10,7 @@ import HelperDashboardScreen from '../features/screens/HelperDashBoard';
 import HelperSOSNotificationScreen from '../features/screens/HelperSOSNotificationScreen';
 import HelperTrackingScreen from '../features/screens/HelperTrackingScreen';
 import SOSCompletionScreen from '../features/screens/SOSCompletionScreen';
+import SOSActiveScreen from '../features/screens/SOSActiveScreen';
 import SettingsScreen from '../features/screens/SettingsScreen';
 import MainDashboard from '../features/screens/MainDashboard';
 import HelperGuidelinesScreen from '../features/screens/HelperGuidelines';
@@ -31,6 +32,11 @@ const SettingsStack = () => {
       <Stack.Screen name="LocationAccess" component={LocationAccessScreen} options={{ headerShown: false }} />
       <Stack.Screen name="AuthScreen" component={AuthScreen} options={{ headerShown: false }} />
       <Stack.Screen name="MainDashboard" component={MainDashboard} options={{ headerShown: false }} />
+      <Stack.Screen
+        name="SOSActive"
+        component={SOSActiveScreen as any}
+        options={{ headerShown: false, gestureEnabled: false }}
+      />
       <Stack.Screen name="SettingsHome" component={SettingsScreen} options={{ title: 'Settings' }} />
       <Stack.Screen name="EditProfile" component={EditProfileScreen} options={{ title: 'Edit Profile' }} />
       <Stack.Screen name="HelperDashboard" component={HelperDashboardScreen} options={{ title: 'Helper Dashboard', headerShadowVisible: false }} />

@@ -6,6 +6,7 @@ import React from 'react';
 import SettingsStack from './src/navigation/SettingsStack';
 import HelperDispatchRuntime from './src/bootstrap/HelperDispatchRuntime';
 import { flushPendingNavigation, navigationRef } from './src/navigation/navigationRef';
+import { VictimSOSProvider } from './src/features/sos/VictimSOSContext';
 
 function App() {
   const isDarkMode = useColorScheme() === 'dark';
@@ -13,7 +14,9 @@ function App() {
     <SafeAreaProvider>
       <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
       <NavigationContainer ref={navigationRef} onReady={flushPendingNavigation}>
-        <SettingsStack />
+        <VictimSOSProvider>
+          <SettingsStack />
+        </VictimSOSProvider>
       </NavigationContainer>
       <HelperDispatchRuntime />
     </SafeAreaProvider>
