@@ -6,21 +6,6 @@ const MAX_HELPERS = 5;
 const H3_RESOLUTION = 9; // 0.7 miles per cell at the equator
 let _redisClient = null;
 
-// function getRedisClient() {
-//     if (!redisClient) {
-//         redisClient = new Redis({
-//             maxRetriesPerRequest: 1,
-//             retryStrategy: () => null,
-//         });
-
-//         redisClient.on('error', () => {
-//             // Keep runtime logs clean; callers handle user-facing errors.
-//         });
-//     }
-
-//     return redisClient;
-// }
-
 //Called once from socket.js to inject the shared Redis client.//
 function setRedisClient(client) {
   _redisClient = client;

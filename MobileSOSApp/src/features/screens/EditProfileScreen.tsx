@@ -1,14 +1,14 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, StyleSheet, TouchableOpacity, ScrollView, SafeAreaView, Image, ActivityIndicator, Alert } from 'react-native';
+import React, { useState, useEffect, useMemo } from 'react';
+import { View, Text, TextInput, StyleSheet, TouchableOpacity, ScrollView, SafeAreaView, Image, ActivityIndicator } from 'react-native';
 import { API_BASE_URL } from '../../config/config';
 import { fetchAuthSession } from 'aws-amplify/auth';
 
-// Define navigation so we can go back to Settings after saving
 type NavigationLike = { goBack: () => void };
 type Props = { navigation: NavigationLike };
 
 const EditProfileScreen: React.FC<Props> = ({ navigation }) => {
   const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState("");
   
   // Initialize with empty strings instead of static data
   const [formData, setFormData] = useState({
@@ -36,8 +36,6 @@ const EditProfileScreen: React.FC<Props> = ({ navigation }) => {
 
         if (response.ok) {
           const data = await response.json();
-          // Populate the form with real database data
-          // Using || '' ensures inputs don't break if a field is missing in the DB
           setFormData({
             firstName: data.firstName || '',
             lastName: data.lastName || '',
@@ -58,8 +56,33 @@ const EditProfileScreen: React.FC<Props> = ({ navigation }) => {
     fetchProfile();
   }, []);
 
+  // AUTO-FORMATTER for the phone number field
+  const handlePhoneChange = (text: string) => {
+    const cleaned = text.replace(/\D/g, '').substring(0, 10);
+    let formatted = cleaned;
+    if (cleaned.length > 3 && cleaned.length <= 6) {
+        formatted = `(${cleaned.slice(0, 3)}) ${cleaned.slice(3)}`;
+    } else if (cleaned.length > 6) {
+        formatted = `(${cleaned.slice(0, 3)}) ${cleaned.slice(3, 6)}-${cleaned.slice(6)}`;
+    }
+    setFormData({ ...formData, phone: formatted });
+  };
+
+  // Ensure First Name, Last Name, and a 10-digit Phone are present
+  const canSubmit = useMemo(() => {
+    const rawDigits = formData.phone ? formData.phone.replace(/\D/g, '') : '';
+    return (
+      rawDigits.length === 10 && 
+      formData.firstName.trim().length > 0 && 
+      formData.lastName.trim().length > 0
+    );
+  }, [formData.phone, formData.firstName, formData.lastName]);
+
   // SAVE CHANGES TO MONGODB
   const handleSave = async () => {
+    if (!canSubmit) return;
+    setErrorMessage(""); // Clear previous errors
+
     try {
       const session = await fetchAuthSession();
       const token = session.tokens?.idToken?.toString();
@@ -77,20 +100,19 @@ const EditProfileScreen: React.FC<Props> = ({ navigation }) => {
         navigation.goBack(); // Instant navigation without pop-up
       } else {
         const err = await response.json();
-        Alert.alert("Error", err.message || "Failed to update profile.");
+        setErrorMessage(err.message || "Failed to update profile.");
       }
     } catch (error) {
       console.error("Save Crash:", error);
-      Alert.alert("Network Error", "Could not connect to the server.");
+      setErrorMessage("Network Error. Could not connect to the server.");
     }
   };
 
   const handleChangePhoto = () => {
     console.log("Trigger OS Image Picker...");
-    // Future integration: Expo ImagePicker or react-native-image-crop-picker
   };
 
-  // Show a loading spinner while fetching data to prevent UI flashing
+  // Show a loading spinner while fetching data
   if (isLoading) {
     return (
       <SafeAreaView style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
@@ -115,19 +137,9 @@ const EditProfileScreen: React.FC<Props> = ({ navigation }) => {
           </TouchableOpacity>
         </View>
 
-        {/* Full Name
-        <View style={styles.inputGroup}>
-          <Text style={styles.label}>Full Name</Text>
-          <TextInput 
-            style={styles.input} 
-            value={formData.fullName} 
-            onChangeText={(t) => setFormData({...formData, fullName: t})} 
-          />
-        </View> */}
-
         {/* First Name */}
         <View style={styles.inputGroup}>
-          <Text style={styles.label}>First Name</Text>
+          <Text style={styles.label}>First Name *</Text>
           <TextInput 
             style={styles.input} 
             value={formData.firstName} 
@@ -137,7 +149,7 @@ const EditProfileScreen: React.FC<Props> = ({ navigation }) => {
 
         {/* Last Name */}
         <View style={styles.inputGroup}>
-          <Text style={styles.label}>Last Name</Text>
+          <Text style={styles.label}>Last Name *</Text>
           <TextInput 
             style={styles.input} 
             value={formData.lastName} 
@@ -159,12 +171,13 @@ const EditProfileScreen: React.FC<Props> = ({ navigation }) => {
         </View>
 
         <View style={styles.inputGroup}>
-          <Text style={styles.label}>Phone Number</Text>
+          <Text style={styles.label}>Phone Number *</Text>
           <TextInput 
             style={styles.input} 
             keyboardType="phone-pad" 
             value={formData.phone} 
-            onChangeText={(t) => setFormData({...formData, phone: t})} 
+            onChangeText={handlePhoneChange} 
+            maxLength={14}
           />
         </View>
 
@@ -199,14 +212,22 @@ const EditProfileScreen: React.FC<Props> = ({ navigation }) => {
           </View>
         </View>
 
-        <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
+        {/* Inline Error Message Replacement for Alert */}
+        {errorMessage !== "" && (
+          <Text style={styles.errorText}>{errorMessage}</Text>
+        )}
+
+        <TouchableOpacity 
+          style={[styles.saveButton, !canSubmit && styles.saveButtonDisabled]} 
+          onPress={handleSave}
+          disabled={!canSubmit}
+        >
           <Text style={styles.saveButtonText}>Save Changes</Text>
         </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
   );
 };
-
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#ffffff' },
@@ -223,7 +244,10 @@ const styles = StyleSheet.create({
   input: { borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 10, padding: 16, fontSize: 16, color: '#111827', backgroundColor: '#f9fafb' },
   row: { flexDirection: 'row', justifyContent: 'space-between' },
   
-  saveButton: { backgroundColor: '#d32f2f', paddingVertical: 18, borderRadius: 12, alignItems: 'center', marginTop: 30, marginBottom: 40 },
+  errorText: { color: '#DC2626', fontSize: 14, fontWeight: '600', textAlign: 'center', marginTop: 10 },
+
+  saveButton: { backgroundColor: '#d32f2f', paddingVertical: 18, borderRadius: 12, alignItems: 'center', marginTop: 20, marginBottom: 40 },
+  saveButtonDisabled: { backgroundColor: "#fca5a5" },
   saveButtonText: { color: '#ffffff', fontSize: 16, fontWeight: 'bold' }
 });
 

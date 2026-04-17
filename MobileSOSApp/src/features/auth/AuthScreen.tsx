@@ -30,7 +30,7 @@ export default function AuthScreen({ navigation }: AuthScreenProps) {
     const [password, setPassword] = useState("");
     const [confirmPassword, setConfirmPassword] = useState("");
     
-    // 🚨 NEW: State for the 6-digit email verification code
+    // State for the 6-digit email verification code
     const [authCode, setAuthCode] = useState("");
     const [message, setMessage] = useState("");
 
@@ -77,7 +77,7 @@ export default function AuthScreen({ navigation }: AuthScreenProps) {
                 setMessage("Success! Check your email for a verification code.");
 
             } else if (isVerifying) {
-                // 2. VERIFY THE OTP CODE
+                // VERIFY THE OTP CODE
                 await confirmSignUp({
                     username: email,
                     confirmationCode: authCode
@@ -87,12 +87,12 @@ export default function AuthScreen({ navigation }: AuthScreenProps) {
                 setMode("signin");
 
             } else {
-                // 3. SIGN IN WITH AWS COGNITO
+                // SIGN IN WITH AWS COGNITO
                 await signIn({ username: email, password });
                 
                 setMessage("Sign in successful!");
                 
-                // AWS automatically saves the token securely. Just navigate!
+                // AWS automatically saves the token securely.
                 setTimeout(() => {
                     navigation.replace("MainDashboard"); 
                 }, 1000);
@@ -126,6 +126,7 @@ export default function AuthScreen({ navigation }: AuthScreenProps) {
                             </Pressable>
                         </View>
                     )}
+
 
                     {isVerifying ? (
                         // VERIFICATION UI

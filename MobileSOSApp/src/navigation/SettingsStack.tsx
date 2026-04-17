@@ -18,10 +18,17 @@ import AddEmergencyContacts from '../features/screens/AddEmergencyContacts';
 
 const Stack = createNativeStackNavigator();
 
-const SettingsStack = () => {
+// DD TYPE DEFINITION
+type SettingsStackProps = {
+  initialRouteName: string;
+};
+
+// ACCEPT THE PROP FROM APP.TSX
+const SettingsStack = ({ initialRouteName }: SettingsStackProps) => {
   return (
     <Stack.Navigator 
-      initialRouteName="AuthScreen"
+      // USE THE DYNAMIC ROUTE HERE
+      initialRouteName={initialRouteName}
       screenOptions={{
         headerStyle: { backgroundColor: '#fff' },
         headerTintColor: '#0f172a',

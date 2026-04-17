@@ -1,8 +1,7 @@
 import type { ParamListBase } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { API_BASE_URL } from '../../config/config';
-import { fetchAuthSession } from 'aws-amplify/auth';
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
     KeyboardAvoidingView,
     Platform,
@@ -16,6 +15,7 @@ import {
     View,
     Image
 } from 'react-native';
+import { fetchAuthSession } from 'aws-amplify/auth';
 
 type CompleteProfileProps = {
     navigation: NativeStackNavigationProp<ParamListBase>;
@@ -29,11 +29,29 @@ export default function CompleteProfile({ navigation }: CompleteProfileProps) {
         weight: ''
     });
 
+    // Converts "1234567890" to "(123) 456-7890"
+    const handlePhoneChange = (text: string) => {
+        const cleaned = text.replace(/\D/g, '').substring(0, 10);
+        let formatted = cleaned;
+        if (cleaned.length > 3 && cleaned.length <= 6) {
+            formatted = `(${cleaned.slice(0, 3)}) ${cleaned.slice(3)}`;
+        } else if (cleaned.length > 6) {
+            formatted = `(${cleaned.slice(0, 3)}) ${cleaned.slice(3, 6)}-${cleaned.slice(6)}`;
+        }
+        setFormData({ ...formData, phone: formatted });
+    };
+
+    // Phone Number is required, and it must be exactly 10 digits
+    const canSubmit = useMemo(() => {
+        const rawDigits = formData.phone.replace(/\D/g, '');
+        return rawDigits.length === 10;
+    }, [formData.phone]);
+
     const handleNext = async () => {
+        if (!canSubmit) return;
+
         try {
-            // RETRIEVE THE TOKEN FROM THE PHONE
             const session = await fetchAuthSession();
-            // This extracts the secure AWS JWT token to send to your Express server
             const token = session.tokens?.idToken?.toString();
 
             if (!token) {
@@ -41,12 +59,11 @@ export default function CompleteProfile({ navigation }: CompleteProfileProps) {
                 return;
             }
 
-            // SEND THE SECURE UPDATE REQUEST
             const response = await fetch(`${API_BASE_URL}/users/profile`, {
                 method: 'PUT',
                 headers: { 
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}` // <--- Here is the ID Badge!
+                    'Authorization': `Bearer ${token}` 
                 },
                 body: JSON.stringify({
                     phone: formData.phone,
@@ -73,35 +90,29 @@ export default function CompleteProfile({ navigation }: CompleteProfileProps) {
 
     return (
         <SafeAreaView style={styles.safeArea}>
-            <KeyboardAvoidingView
-                behavior={Platform.OS === "ios" ? "padding" : undefined}
-                style={{ flex: 1 }}
-            >
+            <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
                 <ScrollView contentContainerStyle={styles.scrollContent}>
                     <View style={styles.header}>
                         <Text style={styles.title}>Complete Profile</Text>
                         <Text style={styles.subtitle}>Help responders identify and locate you faster.</Text>
                     </View>
 
-                    {/* Profile Photo */}
                     <View style={styles.photoContainer}>
-                        <Image 
-                            source={{ uri: 'https://via.placeholder.com/100' }} 
-                            style={styles.profilePic} 
-                        />
+                        <Image source={{ uri: 'https://via.placeholder.com/100' }} style={styles.profilePic} />
                         <TouchableOpacity onPress={handleChangePhoto}>
                             <Text style={styles.changePhotoText}>Upload Photo</Text>
                         </TouchableOpacity>
                     </View>
 
                     <View style={styles.inputGroup}>
-                        <Text style={styles.label}>Phone Number</Text>
+                        <Text style={styles.label}>Phone Number *</Text>
                         <TextInput 
                             style={styles.input} 
                             keyboardType="phone-pad" 
                             placeholder="(555) 123-4567"
                             value={formData.phone} 
-                            onChangeText={(t) => setFormData({...formData, phone: t})} 
+                            onChangeText={handlePhoneChange} 
+                            maxLength={14} // (XXX) XXX-XXXX is 14 characters
                         />
                     </View>
 
@@ -118,26 +129,19 @@ export default function CompleteProfile({ navigation }: CompleteProfileProps) {
                     <View style={styles.row}>
                         <View style={[styles.inputGroup, {flex: 1, marginRight: 10}]}>
                             <Text style={styles.label}>Height</Text>
-                            <TextInput 
-                                style={styles.input} 
-                                placeholder="e.g. 5'11"
-                                value={formData.height} 
-                                onChangeText={(t) => setFormData({...formData, height: t})} 
-                            />
+                            <TextInput style={styles.input} placeholder="e.g. 5'11" value={formData.height} onChangeText={(t) => setFormData({...formData, height: t})} />
                         </View>
                         <View style={[styles.inputGroup, {flex: 1}]}>
                             <Text style={styles.label}>Weight (lbs)</Text>
-                            <TextInput 
-                                style={styles.input} 
-                                keyboardType="numeric" 
-                                placeholder="e.g. 160"
-                                value={formData.weight} 
-                                onChangeText={(t) => setFormData({...formData, weight: t})} 
-                            />
+                            <TextInput style={styles.input} keyboardType="numeric" placeholder="e.g. 160" value={formData.weight} onChangeText={(t) => setFormData({...formData, weight: t})} />
                         </View>
                     </View>
 
-                    <Pressable style={styles.submitButton} onPress={handleNext}>
+                    <Pressable 
+                        style={[styles.submitButton, !canSubmit && styles.submitButtonDisabled]} 
+                        onPress={handleNext}
+                        disabled={!canSubmit}
+                    >
                         <Text style={styles.submitButtonText}>Next: Emergency Contacts</Text>
                     </Pressable>
                 </ScrollView>
@@ -163,5 +167,6 @@ const styles = StyleSheet.create({
     row: { flexDirection: 'row', justifyContent: 'space-between' },
     
     submitButton: { backgroundColor: "#F40009", borderRadius: 12, paddingVertical: 16, alignItems: "center", marginTop: 24, marginBottom: 40 },
+    submitButtonDisabled: { backgroundColor: "#fca5a5" },
     submitButtonText: { color: "white", fontSize: 18, fontWeight: "bold" }
 });

@@ -2,6 +2,8 @@
 
 */.env
 
+# */env.d.ts
+
 # Terraform
 .terraform
 *.tfstate

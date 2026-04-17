@@ -13,7 +13,6 @@ const userSchema = new mongoose.Schema({
     firstName: { type: String, required: true, minlength: 1, maxlength: 120 },
     lastName: { type: String, required: true, minlength: 1, maxlength: 120 },
     email: { type: String, required: true, unique: true, maxlength: 254 },
-    // 🚨 passwordHash HAS BEEN DELETED! 🚨
 
     // Extended Profile
     phone: { type: String, maxlength: 20 },

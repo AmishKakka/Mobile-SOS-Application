@@ -51,7 +51,6 @@ export default function CompleteMedicalProfile({ navigation }: CompleteMedicalPr
             });
 
             if (response.ok) {
-                // The onboarding flow is fully complete!
                 navigation.replace('MainDashboard');
             } else {
                 console.error("Medical profile update failed");

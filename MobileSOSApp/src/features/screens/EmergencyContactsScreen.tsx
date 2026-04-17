@@ -12,8 +12,9 @@ const EmergencyContactsScreen: React.FC<Props> = ({ navigation }) => {
   const [showAddForm, setShowAddForm] = useState(false);
   const [newContact, setNewContact] = useState({ name: '', phone: '', relation: '' });
   const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState("");
 
-  // 1. FETCH CONTACTS ON LOAD
+  // FETCH CONTACTS ON LOAD
   useEffect(() => {
     const fetchContacts = async () => {
       try {
@@ -28,7 +29,6 @@ const EmergencyContactsScreen: React.FC<Props> = ({ navigation }) => {
 
         if (response.ok) {
           const data = await response.json();
-          // If they have contacts in the DB, set them. Otherwise leave it as an empty array []
           if (data.emergencyContacts) {
             setContacts(data.emergencyContacts);
           }
@@ -44,28 +44,45 @@ const EmergencyContactsScreen: React.FC<Props> = ({ navigation }) => {
   }, []);
 
   const removeContact = (idToRemove: string) => {
-    // Check both id and _id depending on if it's new or from the DB
     setContacts(contacts.filter(contact => (contact._id || contact.id) !== idToRemove));
   };
 
+  // AUTO-FORMATTER for the contact form
+  const handlePhoneChange = (text: string) => {
+    const cleaned = text.replace(/\D/g, '').substring(0, 10);
+    let formatted = cleaned;
+    if (cleaned.length > 3 && cleaned.length <= 6) {
+        formatted = `(${cleaned.slice(0, 3)}) ${cleaned.slice(3)}`;
+    } else if (cleaned.length > 6) {
+        formatted = `(${cleaned.slice(0, 3)}) ${cleaned.slice(3, 6)}-${cleaned.slice(6)}`;
+    }
+    setNewContact({ ...newContact, phone: formatted });
+  };
+
   const addContact = () => {
-    if (!newContact.name || !newContact.phone) {
-      Alert.alert("Missing Info", "Please fill out the name and phone number.");
+    const rawDigits = newContact.phone.replace(/\D/g, '');
+    
+    // Require Name, 10-digit Phone, and Relation
+    if (!newContact.name || rawDigits.length !== 10 || !newContact.relation) {
+      setErrorMessage("Please enter a Name, a 10-digit Phone, and a Relationship.");
       return;
     }
 
     const contactToAdd = {
-      id: Date.now().toString(), // Temporary local ID until saved to DB
+      id: Date.now().toString(),
       ...newContact
     };
 
     setContacts([...contacts, contactToAdd]);
     setNewContact({ name: '', phone: '', relation: '' }); 
+    setErrorMessage("");
     setShowAddForm(false); 
   };
 
-  // SAVE CONTACTS TO MONGODB (Seamless Transition)
+  // SAVE CONTACTS TO MONGODB
   const handleSave = async () => {
+    if (contacts.length === 0) return;
+
     try {
       const session = await fetchAuthSession();
       const token = session.tokens?.idToken?.toString();
@@ -99,6 +116,9 @@ const EmergencyContactsScreen: React.FC<Props> = ({ navigation }) => {
     );
   }
 
+  // Requires at least 1 contact to proceed
+  const canProceed = contacts.length > 0;
+
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scroll}>
@@ -111,7 +131,7 @@ const EmergencyContactsScreen: React.FC<Props> = ({ navigation }) => {
 
         {/* List of Current Contacts */}
         {contacts.map((contact) => {
-          const uniqueKey = contact._id || contact.id; // Safely handle MongoDB keys
+          const uniqueKey = contact._id || contact.id; 
           return (
             <View key={uniqueKey} style={styles.contactCard}>
               <View style={styles.contactInfo}>
@@ -130,15 +150,49 @@ const EmergencyContactsScreen: React.FC<Props> = ({ navigation }) => {
           );
         })}
 
+        {/* The inline error message */}
+        {errorMessage !== "" && (
+          <Text style={styles.errorText}>{errorMessage}</Text>
+        )}
+
+        <View style={styles.formActions}>
+          <TouchableOpacity
+            style={styles.cancelFormBtn}
+            onPress={() => {
+              setShowAddForm(false);
+              setErrorMessage(""); // Clear error if they cancel
+            }}
+          >
+            <Text style={styles.cancelFormText}>Cancel</Text>
+          </TouchableOpacity>
+
         {/* Add Contact Button / Form */}
         {contacts.length < 5 ? (
           showAddForm ? (
             <View style={styles.addFormContainer}>
               <Text style={styles.formTitle}>Add New Contact</Text>
               
-              <TextInput style={styles.input} placeholder="Full Name" placeholderTextColor="#9ca3af" value={newContact.name} onChangeText={(t) => setNewContact({...newContact, name: t})} />
-              <TextInput style={styles.input} placeholder="Phone Number" placeholderTextColor="#9ca3af" keyboardType="phone-pad" value={newContact.phone} onChangeText={(t) => setNewContact({...newContact, phone: t})} />
-              <TextInput style={styles.input} placeholder="Relationship (e.g., Sister, Friend)" placeholderTextColor="#9ca3af" value={newContact.relation} onChangeText={(t) => setNewContact({...newContact, relation: t})} />
+              <TextInput style={styles.input} placeholder="Full Name *" placeholderTextColor="#9ca3af" value={newContact.name} onChangeText={(t) => setNewContact({...newContact, name: t})} />
+              <TextInput style={styles.input} placeholder="Phone Number *" placeholderTextColor="#9ca3af" keyboardType="phone-pad" value={newContact.phone} onChangeText={handlePhoneChange} maxLength={14} />
+              
+              {/* Custom Relationship Selector */}
+              <Text style={styles.relationLabel}>Relationship *</Text>
+              <View style={styles.relationContainer}>
+                <TouchableOpacity 
+                  style={[styles.relationOption, newContact.relation === 'Family' && styles.relationOptionActive]} 
+                  onPress={() => setNewContact({...newContact, relation: 'Family'})}
+                >
+                  <Text style={[styles.relationText, newContact.relation === 'Family' && styles.relationTextActive]}>Family</Text>
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  style={[styles.relationOption, newContact.relation === 'Friend' && styles.relationOptionActive]} 
+                  onPress={() => setNewContact({...newContact, relation: 'Friend'})}
+                >
+                  <Text style={[styles.relationText, newContact.relation === 'Friend' && styles.relationTextActive]}>Friend</Text>
+                </TouchableOpacity>
+              </View>
+
+              
               
               <View style={styles.formActions}>
                 <TouchableOpacity style={styles.cancelFormBtn} onPress={() => setShowAddForm(false)}>
@@ -151,7 +205,7 @@ const EmergencyContactsScreen: React.FC<Props> = ({ navigation }) => {
             </View>
           ) : (
             <TouchableOpacity style={styles.addContactBtn} onPress={() => setShowAddForm(true)}>
-              <Text style={styles.addContactText}>+ Add Another Contact</Text>
+              <Text style={styles.addContactText}>{contacts.length === 0 ? "+ Add Your First Contact" : "+ Add Another Contact"}</Text>
             </TouchableOpacity>
           )
         ) : (
@@ -160,7 +214,11 @@ const EmergencyContactsScreen: React.FC<Props> = ({ navigation }) => {
           </View>
         )}
 
-        <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
+        <TouchableOpacity 
+          style={[styles.saveButton, !canProceed && styles.saveButtonDisabled]} 
+          onPress={handleSave}
+          disabled={!canProceed}
+        >
           <Text style={styles.saveButtonText}>Save Changes</Text>
         </TouchableOpacity>
 
@@ -168,7 +226,6 @@ const EmergencyContactsScreen: React.FC<Props> = ({ navigation }) => {
     </SafeAreaView>
   );
 };
-
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f9fafb' },
@@ -179,7 +236,6 @@ const styles = StyleSheet.create({
   counter: { fontSize: 16, fontWeight: '700', color: '#d32f2f', backgroundColor: '#fef2f2', paddingHorizontal: 12, paddingVertical: 4, borderRadius: 12, overflow: 'hidden' },
   subtitle: { fontSize: 14, color: '#6b7280', marginBottom: 24, lineHeight: 20 },
 
-  // Contact Card Styles
   contactCard: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#ffffff', padding: 16, borderRadius: 12, marginBottom: 12, borderWidth: 1, borderColor: '#e5e7eb' },
   contactInfo: { flexDirection: 'row', alignItems: 'center' },
   avatarCircle: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#f3f4f6', justifyContent: 'center', alignItems: 'center', marginRight: 12 },
@@ -189,7 +245,6 @@ const styles = StyleSheet.create({
   removeBtn: { padding: 8 },
   removeBtnText: { color: '#d32f2f', fontSize: 14, fontWeight: '600' },
 
-  // Add Button Styles
   addContactBtn: { borderStyle: 'dashed', borderWidth: 1.5, borderColor: '#d1d5db', borderRadius: 12, padding: 16, alignItems: 'center', marginTop: 8, backgroundColor: '#ffffff' },
   addContactText: { color: '#4b5563', fontSize: 15, fontWeight: '600' },
   
@@ -199,6 +254,15 @@ const styles = StyleSheet.create({
   addFormContainer: { backgroundColor: '#ffffff', padding: 16, borderRadius: 12, marginTop: 8, borderWidth: 1, borderColor: '#e5e7eb' },
   formTitle: { fontSize: 16, fontWeight: '700', color: '#111827', marginBottom: 12 },
   input: { borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 8, padding: 12, fontSize: 15, color: '#111827', backgroundColor: '#f9fafb', marginBottom: 12 },
+  
+  // Custom Relation Selector Styles
+  relationLabel: { fontSize: 14, fontWeight: '600', color: '#374151', marginBottom: 8 },
+  relationContainer: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 16 },
+  relationOption: { flex: 1, paddingVertical: 12, borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 8, alignItems: 'center', marginHorizontal: 4, backgroundColor: '#f9fafb' },
+  relationOptionActive: { borderColor: '#111827', backgroundColor: '#e5e7eb' },
+  relationText: { fontSize: 14, fontWeight: '600', color: '#6b7280' },
+  relationTextActive: { color: '#111827' },
+
   formActions: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 8 },
   cancelFormBtn: { paddingVertical: 10, paddingHorizontal: 16, marginRight: 8 },
   cancelFormText: { color: '#6b7280', fontSize: 15, fontWeight: '600' },
@@ -206,7 +270,16 @@ const styles = StyleSheet.create({
   submitFormText: { color: '#ffffff', fontSize: 15, fontWeight: '600' },
 
   saveButton: { backgroundColor: '#d32f2f', paddingVertical: 18, borderRadius: 12, alignItems: 'center', marginTop: 32, marginBottom: 40 },
-  saveButtonText: { color: '#ffffff', fontSize: 16, fontWeight: 'bold' }
+  saveButtonDisabled: { backgroundColor: "#fca5a5" },
+  saveButtonText: { color: '#ffffff', fontSize: 16, fontWeight: 'bold' },
+
+  errorText: {
+    color: '#DC2626',
+    fontSize: 13,
+    fontWeight: '600',
+    marginBottom: 8,
+    marginTop: 4
+  },
 });
 
 export default EmergencyContactsScreen;

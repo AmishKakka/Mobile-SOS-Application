@@ -39,10 +39,7 @@ exports.registerUser = async (req, res) => {
 };
 
 
-// 🚨 loginUser HAS BEEN DELETED. AWS Cognito handles logins directly on the phone! 🚨
-
-
-// READ: Get User Profile (Settings Dashboard)
+// READ: Get User Profile
 exports.getUserProfile = async (req, res) => {
     try {
         // req.user.cognitoId is provided by the AWS auth.js middleware

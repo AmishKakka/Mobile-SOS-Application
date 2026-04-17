@@ -17,7 +17,7 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
   useEffect(() => {
     const fetchProfile = async () => {
       try {
-        // 🚨 NEW: Get token from AWS
+        // Get token from AWS
         const session = await fetchAuthSession();
         const token = session.tokens?.idToken?.toString();
         if (!token) return;
@@ -62,7 +62,7 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
         <TouchableOpacity 
           style={styles.logoutBtn}
           onPress={async () => {
-             // 🚨 NEW: Tell AWS to destroy the session securely
+             // AWS to destroy the session securely
              try {
                 await signOut();
                 navigation.replace('AuthScreen');

@@ -8,7 +8,7 @@ const verifier = CognitoJwtVerifier.create({
 });
 
 module.exports = async function (req, res, next) {
-    // Get the token from the request header (Format: "Bearer <token>")
+    // Get the token from the request header
     const authHeader = req.header('Authorization');
     
     if (!authHeader || !authHeader.startsWith('Bearer ')) {

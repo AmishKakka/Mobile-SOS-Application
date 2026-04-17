@@ -30,7 +30,7 @@ export default function MedicalProfileScreen({ navigation }: MedicalProfileProps
         conditions: ''
     });
 
-    // 1. FETCH EXISTING DATA ON LOAD
+    // FETCH EXISTING DATA ON LOAD
     useEffect(() => {
         const fetchMedicalData = async () => {
             try {
@@ -46,7 +46,7 @@ export default function MedicalProfileScreen({ navigation }: MedicalProfileProps
                 if (response.ok) {
                     const data = await response.json();
                     
-                    // If they have medical data, convert the MongoDB arrays back into readable comma-separated strings
+                    // If users have medical data, convert the MongoDB arrays back into readable comma-separated strings
                   if (data.medical) {
                     setMedicalData({
                       // Change from data.medical.bloodType to data.medical.bloodGroup
@@ -73,7 +73,7 @@ export default function MedicalProfileScreen({ navigation }: MedicalProfileProps
             const session = await fetchAuthSession();
             const token = session.tokens?.idToken?.toString();
 
-            // Convert the comma-separated text box strings back into neat Arrays for MongoDB
+            // Convert the comma-separated text box strings back into Arrays for MongoDB
           const formattedMedicalData = {
             // Send it as 'bloodGroup' and force it to be uppercase so Mongoose accepts it!
             bloodGroup: medicalData.bloodType ? medicalData.bloodType.trim().toUpperCase() : null,
