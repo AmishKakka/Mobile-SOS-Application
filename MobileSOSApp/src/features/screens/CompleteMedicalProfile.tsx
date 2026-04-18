@@ -2,7 +2,7 @@ import type { ParamListBase } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { API_BASE_URL } from '../../config/config';
 import { fetchAuthSession } from 'aws-amplify/auth';
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
     KeyboardAvoidingView,
     Platform,
@@ -13,16 +13,13 @@ import {
     Text,
     TextInput,
     View,
-    ActivityIndicator,
-    Alert
 } from 'react-native';
 
-type MedicalProfileProps = {
+type CompleteMedicalProfileProps = {
     navigation: NativeStackNavigationProp<ParamListBase>;
 };
 
-export default function MedicalProfileScreen({ navigation }: MedicalProfileProps) {
-    const [isLoading, setIsLoading] = useState(true);
+export default function CompleteMedicalProfile({ navigation }: CompleteMedicalProfileProps) {
     const [medicalData, setMedicalData] = useState({
         bloodType: '',
         allergies: '',
@@ -30,57 +27,17 @@ export default function MedicalProfileScreen({ navigation }: MedicalProfileProps
         conditions: ''
     });
 
-    // FETCH EXISTING DATA ON LOAD
-    useEffect(() => {
-        const fetchMedicalData = async () => {
-            try {
-                const session = await fetchAuthSession();
-                const token = session.tokens?.idToken?.toString();
-                if (!token) return;
-
-                const response = await fetch(`${API_BASE_URL}/users/profile`, {
-                    method: 'GET',
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-
-                if (response.ok) {
-                    const data = await response.json();
-                    
-                    // If users have medical data, convert the MongoDB arrays back into readable comma-separated strings
-                  if (data.medical) {
-                    setMedicalData({
-                      // Change from data.medical.bloodType to data.medical.bloodGroup
-                      bloodType: data.medical.bloodGroup || '',
-                      allergies: data.medical.allergies ? data.medical.allergies.join(', ') : '',
-                      medications: data.medical.medications ? data.medical.medications.join(', ') : '',
-                      conditions: data.medical.conditions ? data.medical.conditions.join(', ') : ''
-                    });
-                  }
-                }
-            } catch (error) {
-                console.error("Failed to load medical profile:", error);
-            } finally {
-                setIsLoading(false);
-            }
-        };
-
-        fetchMedicalData();
-    }, []);
-
-    // 2. SAVE EDITED DATA
     const handleSave = async () => {
         try {
             const session = await fetchAuthSession();
             const token = session.tokens?.idToken?.toString();
-
-            // Convert the comma-separated text box strings back into Arrays for MongoDB
-          const formattedMedicalData = {
-            // Send it as 'bloodGroup' and force it to be uppercase so Mongoose accepts it!
-            bloodGroup: medicalData.bloodType ? medicalData.bloodType.trim().toUpperCase() : null,
-            allergies: medicalData.allergies.split(',').map(item => item.trim()).filter(item => item !== ''),
-            medications: medicalData.medications.split(',').map(item => item.trim()).filter(item => item !== ''),
-            conditions: medicalData.conditions.split(',').map(item => item.trim()).filter(item => item !== '')
-          };
+            const formattedMedicalData = {
+                // Send it as 'bloodGroup' and force it to be uppercase so Mongoose accepts it!
+                bloodGroup: medicalData.bloodType ? medicalData.bloodType.trim().toUpperCase() : null,
+                allergies: medicalData.allergies.split(',').map(item => item.trim()).filter(item => item !== ''),
+                medications: medicalData.medications.split(',').map(item => item.trim()).filter(item => item !== ''),
+                conditions: medicalData.conditions.split(',').map(item => item.trim()).filter(item => item !== '')
+            };
 
             const response = await fetch(`${API_BASE_URL}/users/profile`, {
                 method: 'PUT',
@@ -88,29 +45,20 @@ export default function MedicalProfileScreen({ navigation }: MedicalProfileProps
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${token}` 
                 },
-                body: JSON.stringify({ medical: formattedMedicalData }) 
+                body: JSON.stringify({ 
+                    medical: formattedMedicalData 
+                }) 
             });
 
             if (response.ok) {
-                navigation.goBack();
+                navigation.replace('MainDashboard');
             } else {
-                const err = await response.json();
-                Alert.alert("Error", err.message || "Failed to update medical profile.");
+                console.error("Medical profile update failed");
             }
         } catch (error) {
             console.error("Network error during medical update:", error);
-            Alert.alert("Error", "Network error. Please try again.");
         }
     };
-
-    // Show a loading spinner while fetching
-    if (isLoading) {
-        return (
-            <SafeAreaView style={[styles.safeArea, { justifyContent: 'center', alignItems: 'center' }]}>
-                <ActivityIndicator size="large" color="#F40009" />
-            </SafeAreaView>
-        );
-    }
 
     return (
         <SafeAreaView style={styles.safeArea}>
@@ -121,11 +69,11 @@ export default function MedicalProfileScreen({ navigation }: MedicalProfileProps
                 <ScrollView contentContainerStyle={styles.scrollContent}>
                     <View style={styles.header}>
                         <Text style={styles.title}>Medical History</Text>
-                        <Text style={styles.subtitle}>Update your vital health details to inform responders during an SOS event.</Text>
+                        <Text style={styles.subtitle}>Optional: Share vital health details to inform responders during an SOS event.</Text>
                     </View>
 
                     <View style={styles.inputGroup}>
-                        <Text style={styles.label}>Blood Type</Text>
+                        <Text style={styles.label}>Blood Type (Optional)</Text>
                         <TextInput 
                             style={styles.input} 
                             placeholder="e.g. O+, A-, AB+"
@@ -135,10 +83,10 @@ export default function MedicalProfileScreen({ navigation }: MedicalProfileProps
                     </View>
 
                     <View style={styles.inputGroup}>
-                        <Text style={styles.label}>Allergies</Text>
+                        <Text style={styles.label}>Allergies (Optional)</Text>
                         <TextInput 
                             style={[styles.input, styles.textArea]} 
-                            placeholder="e.g. Peanuts, Penicillin (comma separated)"
+                            placeholder="e.g. Peanuts, Penicillin"
                             multiline
                             numberOfLines={3}
                             value={medicalData.allergies} 
@@ -147,10 +95,10 @@ export default function MedicalProfileScreen({ navigation }: MedicalProfileProps
                     </View>
 
                     <View style={styles.inputGroup}>
-                        <Text style={styles.label}>Current Medications</Text>
+                        <Text style={styles.label}>Current Medications (Optional)</Text>
                         <TextInput 
                             style={[styles.input, styles.textArea]} 
-                            placeholder="List any daily medications (comma separated)..."
+                            placeholder="List any daily medications..."
                             multiline
                             numberOfLines={3}
                             value={medicalData.medications} 
@@ -159,10 +107,10 @@ export default function MedicalProfileScreen({ navigation }: MedicalProfileProps
                     </View>
 
                     <View style={styles.inputGroup}>
-                        <Text style={styles.label}>Chronic Conditions</Text>
+                        <Text style={styles.label}>Chronic Conditions (Optional)</Text>
                         <TextInput 
                             style={[styles.input, styles.textArea]} 
-                            placeholder="e.g. Asthma, Diabetes (comma separated)"
+                            placeholder="e.g. Asthma, Diabetes"
                             multiline
                             numberOfLines={3}
                             value={medicalData.conditions} 
@@ -171,7 +119,7 @@ export default function MedicalProfileScreen({ navigation }: MedicalProfileProps
                     </View>
 
                     <Pressable style={styles.submitButton} onPress={handleSave}>
-                        <Text style={styles.submitButtonText}>Save Changes</Text>
+                        <Text style={styles.submitButtonText}>Save & Complete Setup</Text>
                     </Pressable>
                 </ScrollView>
             </KeyboardAvoidingView>

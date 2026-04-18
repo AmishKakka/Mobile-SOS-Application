@@ -1,5 +1,9 @@
 */node_modules
 
+*/.env
+
+# */env.d.ts
+
 # Terraform
 .terraform
 *.tfstate

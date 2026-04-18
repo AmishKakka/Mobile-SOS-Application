@@ -20,6 +20,7 @@ const EmergencyContactsScreen: React.FC<Props> = ({ navigation }) => {
       try {
         const session = await fetchAuthSession();
         const token = session.tokens?.idToken?.toString();
+
         if (!token) return;
 
         const response = await fetch(`${API_BASE_URL}/users/profile`, {
@@ -62,7 +63,6 @@ const EmergencyContactsScreen: React.FC<Props> = ({ navigation }) => {
   const addContact = () => {
     const rawDigits = newContact.phone.replace(/\D/g, '');
     
-    // Require Name, 10-digit Phone, and Relation
     if (!newContact.name || rawDigits.length !== 10 || !newContact.relation) {
       setErrorMessage("Please enter a Name, a 10-digit Phone, and a Relationship.");
       return;
@@ -79,7 +79,6 @@ const EmergencyContactsScreen: React.FC<Props> = ({ navigation }) => {
     setShowAddForm(false); 
   };
 
-  // SAVE CONTACTS TO MONGODB
   const handleSave = async () => {
     if (contacts.length === 0) return;
 
@@ -97,7 +96,7 @@ const EmergencyContactsScreen: React.FC<Props> = ({ navigation }) => {
       });
 
       if (response.ok) {
-        navigation.navigate('MainDashboard');
+        navigation.navigate('CompleteMedicalProfile');
       } else {
         const err = await response.json();
         Alert.alert("Error", err.message || "Failed to save contacts.");
@@ -127,7 +126,7 @@ const EmergencyContactsScreen: React.FC<Props> = ({ navigation }) => {
           <Text style={styles.header}>Emergency Contacts</Text>
           <Text style={styles.counter}>{contacts.length}/5</Text>
         </View>
-        <Text style={styles.subtitle}>These contacts will be notified immediately via SMS when you trigger an SOS alert.</Text>
+        <Text style={styles.subtitle}>You must add at least one contact to notify during an SOS alert.</Text>
 
         {/* List of Current Contacts */}
         {contacts.map((contact) => {
@@ -166,7 +165,7 @@ const EmergencyContactsScreen: React.FC<Props> = ({ navigation }) => {
             <Text style={styles.cancelFormText}>Cancel</Text>
           </TouchableOpacity>
 
-        {/* Add Contact Button / Form */}
+        {/* Add Contact Form */}
         {contacts.length < 5 ? (
           showAddForm ? (
             <View style={styles.addFormContainer}>
@@ -191,8 +190,6 @@ const EmergencyContactsScreen: React.FC<Props> = ({ navigation }) => {
                   <Text style={[styles.relationText, newContact.relation === 'Friend' && styles.relationTextActive]}>Friend</Text>
                 </TouchableOpacity>
               </View>
-
-              
               
               <View style={styles.formActions}>
                 <TouchableOpacity style={styles.cancelFormBtn} onPress={() => setShowAddForm(false)}>
@@ -219,7 +216,7 @@ const EmergencyContactsScreen: React.FC<Props> = ({ navigation }) => {
           onPress={handleSave}
           disabled={!canProceed}
         >
-          <Text style={styles.saveButtonText}>Save Changes</Text>
+          <Text style={styles.saveButtonText}>Next: Medical Info</Text>
         </TouchableOpacity>
 
       </ScrollView>
@@ -273,13 +270,14 @@ const styles = StyleSheet.create({
   saveButtonDisabled: { backgroundColor: "#fca5a5" },
   saveButtonText: { color: '#ffffff', fontSize: 16, fontWeight: 'bold' },
 
-  errorText: {
-    color: '#DC2626',
-    fontSize: 13,
-    fontWeight: '600',
+  errorText: { 
+    color: '#DC2626', 
+    fontSize: 13, 
+    fontWeight: '600', 
     marginBottom: 8,
     marginTop: 4
   },
+
 });
 
 export default EmergencyContactsScreen;

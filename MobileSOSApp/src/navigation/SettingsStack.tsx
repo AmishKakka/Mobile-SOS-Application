@@ -14,13 +14,24 @@ import SOSActiveScreen from '../features/screens/SOSActiveScreen';
 import SettingsScreen from '../features/screens/SettingsScreen';
 import MainDashboard from '../features/screens/MainDashboard';
 import HelperGuidelinesScreen from '../features/screens/HelperGuidelines';
+import DynamicProximitySearch from '../features/sos-tracking/components/DynamicProximitySearch';
+import CompleteProfile from '../features/screens/CompleteProfile';
+import CompleteMedicalProfile from '../features/screens/CompleteMedicalProfile';
+import AddEmergencyContacts from '../features/screens/AddEmergencyContacts';
 
 const Stack = createNativeStackNavigator();
 
-const SettingsStack = () => {
+// DD TYPE DEFINITION
+type SettingsStackProps = {
+  initialRouteName: string;
+};
+
+// ACCEPT THE PROP FROM APP.TSX
+const SettingsStack = ({ initialRouteName }: SettingsStackProps) => {
   return (
-    <Stack.Navigator
-      initialRouteName="GetStarted"
+    <Stack.Navigator 
+      // USE THE DYNAMIC ROUTE HERE
+      initialRouteName={initialRouteName == null ? "GetStarted" : initialRouteName}
       screenOptions={{
         headerStyle: { backgroundColor: '#fff' },
         headerTintColor: '#0f172a',
@@ -31,6 +42,9 @@ const SettingsStack = () => {
       <Stack.Screen name="GetStarted" component={GetStartedScreen} options={{ headerShown: false }} />
       <Stack.Screen name="LocationAccess" component={LocationAccessScreen} options={{ headerShown: false }} />
       <Stack.Screen name="AuthScreen" component={AuthScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="CompleteProfile" component={CompleteProfile} options={{ title: 'Complete Profile'}}/>
+      <Stack.Screen name="AddEmergencyContacts" component={AddEmergencyContacts} options={{ title: 'Add Emergency Contacts'}}/>
+      <Stack.Screen name="CompleteMedicalProfile" component={CompleteMedicalProfile} options={{ title: 'Medical Profile' }} />
       <Stack.Screen name="MainDashboard" component={MainDashboard} options={{ headerShown: false }} />
       <Stack.Screen
         name="SOSActive"

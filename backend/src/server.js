@@ -23,6 +23,15 @@ const REDIS_URL =
   `redis://${process.env.REDIS_HOST || '127.0.0.1'}:6379`;
 
 const app = express();
+
+connectDB(); 
+
+app.use(cors());
+app.use(express.json());
+
+const userRoutes = require('./routes/userRoutes');
+app.use('/api/users', userRoutes);
+
 const server = http.createServer(app);
 
 app.use(cors());
@@ -154,6 +163,11 @@ app.put('/users/:userId/status', async (req, res) => {
   }
 });
 
+// Redis Setup
+// Three separate clients are required:
+//   - redisClient : general reads/writes
+//   - pubClient   : Socket.IO Redis adapter publisher
+//   - subClient   : Socket.IO Redis adapter subscriber
 const redisOpts = {
   pingInterval: 30000,
   connectTimeout: 10000,
@@ -194,7 +208,7 @@ const onRedisReady = () => {
   console.log('✅ All Redis clients connected.');
   initializeSocket(server, redisClient, pubClient, subClient);
 
-  server.listen(PORT, () => {
+  server.listen(PORT, '0.0.0.0', () => {
     console.log(`SafeGuard server running on port ${PORT}`);
   });
 };

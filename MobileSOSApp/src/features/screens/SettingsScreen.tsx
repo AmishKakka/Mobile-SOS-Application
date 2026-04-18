@@ -16,8 +16,10 @@ import {
   setCommunityAvailability,
 } from '../../services/communityAvailability';
 
-type NavigationLike = { navigate: (screen: string, params?: Record<string, any>) => void };
-
+type NavigationLike = { 
+  navigate: (screen: string, params?: Record<string, any>) => void;
+  replace: (screen: string) => void;
+};
 type SettingsScreenProps = { navigation: NavigationLike };
 
 const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
@@ -59,6 +61,48 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
       setIsBusy(false);
     }
   };
+
+  const [userData, setUserData] = useState({ firstName: '', lastName: '', email: '' });
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchProfile = async () => {
+      try {
+        // Get token from AWS
+        const session = await fetchAuthSession();
+        const token = session.tokens?.idToken?.toString();
+        if (!token) return;
+
+        const response = await fetch(`${API_BASE_URL}/users/profile`, {
+          method: 'GET',
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          setUserData({
+            firstName: data.firstName,
+            lastName: data.lastName,
+            email: data.email
+          });
+        }
+      } catch (error) {
+        console.error("Failed to load profile data:", error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchProfile();
+  }, []);
+
+  if (isLoading) {
+    return (
+      <SafeAreaView style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color="#DC2626" />
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -137,17 +181,27 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
         </View>
 
         {/* LOGOUT BUTTON */}
-        <TouchableOpacity style={styles.logoutBtn}>
+        <TouchableOpacity 
+          style={styles.logoutBtn}
+          onPress={async () => {
+             // AWS to destroy the session securely
+             try {
+                await signOut();
+                navigation.replace('AuthScreen');
+             } catch (error) {
+                console.error("Error signing out: ", error);
+             }
+          }}
+        >
           <LogOut color="#DC2626" size={18} style={{ marginRight: 8 }} />
           <Text style={styles.logoutText}>Sign Out</Text>
         </TouchableOpacity>
-
-        <Text style={styles.versionText}>MobileSOS App v1.0.4</Text>
 
       </ScrollView>
     </SafeAreaView>
   );
 };
+
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F3F4F6' }, // Darker background to make cards pop
