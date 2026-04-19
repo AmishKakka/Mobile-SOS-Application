@@ -1,6 +1,11 @@
 output "alb_dns_name" {
-  description = "Backend URL — share with Parth and Harsh for frontend"
+  description = "Preferred backend URL for frontend configuration"
   value       = module.alb.alb_dns_name
+}
+
+output "raw_alb_dns_name" {
+  description = "Raw AWS ALB DNS name"
+  value       = module.alb.raw_alb_dns_name
 }
 
 output "nat_gateway_ip" {

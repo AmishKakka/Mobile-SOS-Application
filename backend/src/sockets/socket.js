@@ -1,3 +1,4 @@
+const { randomUUID } = require('crypto');
 const { Server } = require('socket.io');
 const { createAdapter } = require('@socket.io/redis-adapter');
 const h3 = require('h3-js');
@@ -6,6 +7,8 @@ const { triggerSOS } = require('../services/dynamicProximitySearch');
 const { alertHelpersViaFCM, alertEmergencyContacts } = require('../services/fcmService');
 const User = require('../models/User');
 const { HELPER_STATUS_TTL_SECONDS } = require('../services/helperAvailabilityIndex');
+const { verifyIdToken } = require('../services/cognitoVerifier');
+const { incidentTelemetryStore } = require('../services/incidentTelemetryStore');
 
 const H3_RESOLUTION = Number(process.env.H3_RESOLUTION || 9);
 const LAST_LOCATION_TTL_SECONDS = Math.max(
@@ -22,6 +25,14 @@ const SEARCH_POOL_LIMIT = Math.max(
 );
 
 const activeEmergencyRooms = new Map();
+
+function runTelemetry(label, task) {
+  Promise.resolve()
+    .then(task)
+    .catch((error) => {
+      console.error(`[TELEMETRY] ${label} failed:`, error.message);
+    });
+}
 
 function initializeFirebase() {
   if (admin.apps.length > 0) return;
@@ -42,8 +53,56 @@ function isValidLocation(location) {
   return location && Number.isFinite(Number(location.lat)) && Number.isFinite(Number(location.lng));
 }
 
+async function patchExistingUser(userId, update) {
+  if (!userId || !update || Object.keys(update).length === 0) {
+    return;
+  }
+
+  try {
+    const result = await User.updateOne(
+      { _id: userId },
+      { $set: update },
+      { upsert: false },
+    );
+
+    if (!result.matchedCount) {
+      console.warn(`[SOCKET] Skipped user patch for missing user ${userId}`);
+    }
+  } catch (error) {
+    console.error('[SOCKET] Failed to patch existing user:', error.message);
+  }
+}
+
+function requireSocketIdentity(socket, message = 'Socket user is not registered.') {
+  const userId = String(socket.data.userId || '').trim();
+  if (!userId) {
+    socket.emit('error_msg', { message });
+    return null;
+  }
+  return userId;
+}
+
+function requireMatchingUser(socket, candidateUserId, fieldName) {
+  const socketUserId = requireSocketIdentity(socket);
+  if (!socketUserId) {
+    return null;
+  }
+
+  if (String(candidateUserId || '').trim() !== socketUserId) {
+    socket.emit('error_msg', {
+      message: `${fieldName} does not match the authenticated socket user.`,
+    });
+    return null;
+  }
+
+  return socketUserId;
+}
+
 module.exports = function initializeSocket(server, redisClient, pubClient, subClient) {
   initializeFirebase();
+  incidentTelemetryStore.initialize().catch((error) => {
+    console.error('[TELEMETRY] Initialization failed:', error.message);
+  });
 
   const io = new Server(server, { cors: { origin: '*' } });
   io.adapter(createAdapter(pubClient, subClient));
@@ -52,44 +111,53 @@ module.exports = function initializeSocket(server, redisClient, pubClient, subCl
     console.log(`[SOCKET] Connected ${socket.id}`);
 
     socket.on('register_user', async (payload = {}) => {
-      const userId = String(payload.userId || '').trim();
-      if (!userId) {
-        socket.emit('error_msg', { message: 'register_user requires a userId.' });
-        return;
-      }
-
+      const token = String(payload.token || '').trim();
       const role = ['victim', 'helper', 'contact'].includes(payload.role)
         ? payload.role
         : 'victim';
       const name = typeof payload.name === 'string' ? payload.name.trim() : undefined;
 
-      socket.data.userId = userId;
-      socket.data.role = role;
-      socket.join(`user:${userId}`);
-
       try {
-        await User.updateOne(
-          { _id: userId },
-          {
-            $set: {
-              ...(name ? { name } : {}),
-              role,
-            },
-            $setOnInsert: {
-              emergencyContacts: [],
-            },
-          },
-          { upsert: true },
-        );
-      } catch (error) {
-        console.error('[SOCKET] Failed to upsert registered user:', error.message);
-      }
+        const claims = await verifyIdToken(token);
+        const user = await User.findOne({ cognitoId: claims.sub }).select('_id name').lean();
 
-      socket.emit('registered', { userId, role });
+        if (!user?._id) {
+          socket.emit('error_msg', {
+            message: 'Authenticated user profile was not found. Sync profile first.',
+          });
+          return;
+        }
+
+        const userId = String(user._id);
+        const requestedUserId = String(payload.userId || '').trim();
+        if (requestedUserId && requestedUserId !== userId) {
+          socket.emit('error_msg', {
+            message: 'register_user userId does not match the authenticated user.',
+          });
+          return;
+        }
+
+        socket.data.userId = userId;
+        socket.data.cognitoId = claims.sub;
+        socket.data.role = role;
+        socket.join(`user:${userId}`);
+
+        await patchExistingUser(userId, {
+          ...(name ? { name } : user?.name ? { name: user.name } : {}),
+          role,
+        });
+
+        socket.emit('registered', { userId, role });
+      } catch (error) {
+        console.error('[SOCKET] Failed to verify register_user token:', error.message);
+        socket.emit('error_msg', {
+          message: 'Socket authentication failed. Please sign in again.',
+        });
+      }
     });
 
     socket.on('my_location_updated', async (payload = {}) => {
-      const { userId } = payload;
+      const userId = requireMatchingUser(socket, payload.userId, 'my_location_updated userId');
       const lat = Number(payload.lat);
       const lng = Number(payload.lng);
 
@@ -99,28 +167,18 @@ module.exports = function initializeSocket(server, redisClient, pubClient, subCl
       }
 
       await upsertLiveLocation(redisClient, userId, { lat, lng });
-
-      try {
-        await User.updateOne(
-          { _id: userId },
-          {
-            $set: {
-              lastKnownLocation: {
-                lat,
-                lng,
-                updatedAt: new Date(),
-              },
-            },
-          },
-          { upsert: true },
-        );
-      } catch (error) {
-        console.error('[SOCKET] Failed to update helper location in Mongo:', error.message);
-      }
+      await patchExistingUser(userId, {
+        lastKnownLocation: {
+          lat,
+          lng,
+          updatedAt: new Date(),
+        },
+      });
     });
 
     socket.on('bulk_location_update', async (payload = {}) => {
-      const { userId, locations } = payload;
+      const userId = requireMatchingUser(socket, payload.userId, 'bulk_location_update userId');
+      const { locations } = payload;
       if (!userId || !Array.isArray(locations) || locations.length === 0) {
         return;
       }
@@ -136,7 +194,7 @@ module.exports = function initializeSocket(server, redisClient, pubClient, subCl
     });
 
     socket.on('sos_trigger', async (payload = {}) => {
-      const userId = String(payload.userId || '').trim();
+      const userId = requireMatchingUser(socket, payload.userId, 'sos_trigger userId');
       const location = payload.location;
 
       if (!userId || !isValidLocation(location)) {
@@ -152,6 +210,7 @@ module.exports = function initializeSocket(server, redisClient, pubClient, subCl
           lat: Number(location.lat),
           lng: Number(location.lng),
         };
+        const incidentId = `${roomId}_${Date.now()}_${randomUUID().slice(0, 8)}`;
 
         if (activeEmergencyRooms.has(roomId)) {
           await cleanupRoom(roomId, redisClient, { clearRedisOnly: true });
@@ -159,6 +218,7 @@ module.exports = function initializeSocket(server, redisClient, pubClient, subCl
 
         socket.join(roomId);
         activeEmergencyRooms.set(roomId, {
+          incidentId,
           roomId,
           victimUserId: userId,
           victimSocketId: socket.id,
@@ -170,18 +230,21 @@ module.exports = function initializeSocket(server, redisClient, pubClient, subCl
           redisNotifiedKey,
         });
 
-        await User.updateOne(
-          { _id: userId },
-          {
-            $set: {
-              lastKnownLocation: {
-                lat: victimLocation.lat,
-                lng: victimLocation.lng,
-                updatedAt: new Date(),
-              },
-            },
+        await patchExistingUser(userId, {
+          lastKnownLocation: {
+            lat: victimLocation.lat,
+            lng: victimLocation.lng,
+            updatedAt: new Date(),
           },
-          { upsert: true },
+        });
+
+        runTelemetry('logIncidentCreated', () =>
+          incidentTelemetryStore.logIncidentCreated({
+            incidentId,
+            roomId,
+            victimUserId: userId,
+            location: victimLocation,
+          }),
         );
 
         await alertEmergencyContacts(userId, victimLocation, roomId);
@@ -197,16 +260,33 @@ module.exports = function initializeSocket(server, redisClient, pubClient, subCl
         return;
       }
 
+      const state = activeEmergencyRooms.get(roomId);
+      const socketUserId = requireSocketIdentity(socket);
+      if (!state || !socketUserId || state.victimUserId !== socketUserId) {
+        socket.emit('error_msg', { message: 'Only the victim can cancel this SOS.' });
+        return;
+      }
+
       io.to(roomId).emit('cancel_alert', {
         roomId,
         message: 'The victim cancelled the SOS request.',
       });
 
+      runTelemetry('logIncidentCancelled', () =>
+        incidentTelemetryStore.logIncidentClosed({
+          incidentId: state.incidentId,
+          roomId,
+          finalStatus: 'CANCELLED',
+          reason: 'victim_cancelled',
+        }),
+      );
+
       await cleanupRoom(roomId, redisClient);
     });
 
     socket.on('helper_accept', async ({ helperId, helperName, roomId } = {}, ack = () => { }) => {
-      if (!roomId || !helperId) {
+      const authenticatedHelperId = requireMatchingUser(socket, helperId, 'helper_accept helperId');
+      if (!roomId || !authenticatedHelperId) {
         ack({ ok: false, message: 'helper_accept requires roomId and helperId.' });
         return;
       }
@@ -218,7 +298,7 @@ module.exports = function initializeSocket(server, redisClient, pubClient, subCl
         return;
       }
 
-      if (state.assignedHelperIds.includes(helperId)) {
+      if (state.assignedHelperIds.includes(authenticatedHelperId)) {
         ack({
           ok: true,
           roomId,
@@ -241,7 +321,7 @@ module.exports = function initializeSocket(server, redisClient, pubClient, subCl
       //   return;
       // }
 
-      state.assignedHelperIds.push(helperId);
+      state.assignedHelperIds.push(authenticatedHelperId);
 
       socket.join(roomId);
       socket.data.activeRoomId = roomId;
@@ -256,8 +336,8 @@ module.exports = function initializeSocket(server, redisClient, pubClient, subCl
 
       io.to(`user:${state.victimUserId}`).emit('helper_assigned', {
         roomId,
-        helperId,
-        helperName: helperName || helperId,
+        helperId: authenticatedHelperId,
+        helperName: helperName || authenticatedHelperId,
         acceptedHelperIds: state.assignedHelperIds,
         acceptedCount: state.assignedHelperIds.length,
         message:
@@ -265,24 +345,43 @@ module.exports = function initializeSocket(server, redisClient, pubClient, subCl
             ? `${state.assignedHelperIds.length} helpers accepted your SOS and are on the way.`
             : 'A helper accepted your SOS and is on the way.',
       });
+
+      runTelemetry('logHelperAccepted', () =>
+        incidentTelemetryStore.logHelperAccepted({
+          incidentId: state.incidentId,
+          roomId,
+          helperId: authenticatedHelperId,
+          helperName: helperName || authenticatedHelperId,
+        }),
+      );
     });
 
     socket.on('helper_reject', async ({ helperId, roomId } = {}) => {
+      const authenticatedHelperId = requireMatchingUser(socket, helperId, 'helper_reject helperId');
       const state = activeEmergencyRooms.get(roomId);
-      if (!state || !helperId) {
+      if (!state || !authenticatedHelperId) {
         return;
       }
 
       try {
-        await redisClient.sadd(state.redisNotifiedKey, String(helperId));
+        await redisClient.sadd(state.redisNotifiedKey, String(authenticatedHelperId));
       } catch (error) {
         console.error('[SOS] Failed to mark rejected helper:', error.message);
       }
+
+      runTelemetry('logHelperDeclined', () =>
+        incidentTelemetryStore.logHelperDeclined({
+          incidentId: state.incidentId,
+          roomId,
+          helperId: authenticatedHelperId,
+        }),
+      );
     });
 
     socket.on('victim_location_update', async ({ roomId, location } = {}) => {
       const state = activeEmergencyRooms.get(roomId);
-      if (!state || !isValidLocation(location)) {
+      const socketUserId = requireSocketIdentity(socket);
+      if (!state || !socketUserId || state.victimUserId !== socketUserId || !isValidLocation(location)) {
         return;
       }
 
@@ -296,8 +395,9 @@ module.exports = function initializeSocket(server, redisClient, pubClient, subCl
     });
 
     socket.on('helper_location_update', async ({ roomId, helperId, location } = {}) => {
+      const authenticatedHelperId = requireMatchingUser(socket, helperId, 'helper_location_update helperId');
       const state = activeEmergencyRooms.get(roomId);
-      if (!state || !helperId || !isValidLocation(location)) {
+      if (!state || !authenticatedHelperId || !isValidLocation(location)) {
         return;
       }
 
@@ -306,30 +406,49 @@ module.exports = function initializeSocket(server, redisClient, pubClient, subCl
         lng: Number(location.lng),
       };
 
-      await upsertLiveLocation(redisClient, helperId, nextLocation);
+      await upsertLiveLocation(redisClient, authenticatedHelperId, nextLocation);
       io.to(`user:${state.victimUserId}`).emit('update_helper_pin', {
-        helperId,
+        helperId: authenticatedHelperId,
         location: nextLocation,
       });
+
+      runTelemetry('recordHelperMovement', () =>
+        incidentTelemetryStore.recordHelperMovement({
+          incidentId: state.incidentId,
+          helperId: authenticatedHelperId,
+          location: nextLocation,
+          victimLocation: state.currentVictimLocation,
+        }),
+      );
     });
 
     socket.on('helper_response_cancelled', async ({ roomId, helperId, reason } = {}) => {
+      const authenticatedHelperId = requireMatchingUser(socket, helperId, 'helper_response_cancelled helperId');
       const state = activeEmergencyRooms.get(roomId);
-      if (!state || !state.assignedHelperIds.includes(helperId)) {
+      if (!state || !authenticatedHelperId || !state.assignedHelperIds.includes(authenticatedHelperId)) {
         return;
       }
 
-      state.assignedHelperIds = state.assignedHelperIds.filter((id) => id !== helperId);
+      state.assignedHelperIds = state.assignedHelperIds.filter((id) => id !== authenticatedHelperId);
       socket.leave(roomId);
 
       io.to(`user:${state.victimUserId}`).emit('helper_response_cancelled', {
         roomId,
-        helperId,
+        helperId: authenticatedHelperId,
         acceptedHelperIds: state.assignedHelperIds,
         reason: reason || 'The helper stopped responding.',
       });
 
-      await redisClient.sadd(state.redisNotifiedKey, String(helperId));
+      await redisClient.sadd(state.redisNotifiedKey, String(authenticatedHelperId));
+
+      runTelemetry('logHelperCancelled', () =>
+        incidentTelemetryStore.logHelperCancelled({
+          incidentId: state.incidentId,
+          roomId,
+          helperId: authenticatedHelperId,
+          reason: reason || 'helper_response_cancelled',
+        }),
+      );
 
       if (state.assignedHelperIds.length === 0 && !state.currentSosTimeoutId) {
         await startAutomatedDispatchLoop(io, redisClient, roomId);
@@ -337,22 +456,32 @@ module.exports = function initializeSocket(server, redisClient, pubClient, subCl
     });
 
     socket.on('helper_response_completed', async ({ roomId, helperId, outcome, notes } = {}) => {
+      const authenticatedHelperId = requireMatchingUser(socket, helperId, 'helper_response_completed helperId');
       const state = activeEmergencyRooms.get(roomId);
-      if (!state || !state.assignedHelperIds.includes(helperId)) {
+      if (!state || !authenticatedHelperId || !state.assignedHelperIds.includes(authenticatedHelperId)) {
         return;
       }
 
       if (outcome === 'cannot_handle') {
-        state.assignedHelperIds = state.assignedHelperIds.filter((id) => id !== helperId);
+        state.assignedHelperIds = state.assignedHelperIds.filter((id) => id !== authenticatedHelperId);
 
         io.to(`user:${state.victimUserId}`).emit('helper_response_cancelled', {
           roomId,
-          helperId,
+          helperId: authenticatedHelperId,
           acceptedHelperIds: state.assignedHelperIds,
           reason: notes || 'A helper could not handle this incident.',
         });
 
-        await redisClient.sadd(state.redisNotifiedKey, String(helperId));
+        await redisClient.sadd(state.redisNotifiedKey, String(authenticatedHelperId));
+
+        runTelemetry('logHelperCancelled', () =>
+          incidentTelemetryStore.logHelperCancelled({
+            incidentId: state.incidentId,
+            roomId,
+            helperId: authenticatedHelperId,
+            reason: notes || 'cannot_handle',
+          }),
+        );
 
         if (state.assignedHelperIds.length === 0 && !state.currentSosTimeoutId) {
           await startAutomatedDispatchLoop(io, redisClient, roomId);
@@ -362,10 +491,21 @@ module.exports = function initializeSocket(server, redisClient, pubClient, subCl
 
       io.to(roomId).emit('incident_resolved', {
         roomId,
-        helperId,
+        helperId: authenticatedHelperId,
         outcome: outcome || 'helped',
         notes: notes || '',
       });
+
+      runTelemetry('logIncidentCompleted', () =>
+        incidentTelemetryStore.logIncidentClosed({
+          incidentId: state.incidentId,
+          roomId,
+          helperId: authenticatedHelperId,
+          finalStatus: 'COMPLETED',
+          reason: outcome || 'helped',
+          notes: notes || '',
+        }),
+      );
 
       await cleanupRoom(roomId, redisClient);
     });
@@ -384,6 +524,14 @@ module.exports = function initializeSocket(server, redisClient, pubClient, subCl
             roomId,
             message: 'Victim lost connection. SOS closed.',
           });
+          runTelemetry('logIncidentCancelled', () =>
+            incidentTelemetryStore.logIncidentClosed({
+              incidentId: state.incidentId,
+              roomId,
+              finalStatus: 'CANCELLED',
+              reason: 'victim_disconnected',
+            }),
+          );
           await cleanupRoom(roomId, redisClient);
           return;
         }
@@ -400,6 +548,14 @@ module.exports = function initializeSocket(server, redisClient, pubClient, subCl
             reason: 'Assigned helper disconnected.',
           });
           await redisClient.sadd(state.redisNotifiedKey, String(userId));
+          runTelemetry('logHelperCancelled', () =>
+            incidentTelemetryStore.logHelperCancelled({
+              incidentId: state.incidentId,
+              roomId: activeRoomId,
+              helperId: userId,
+              reason: 'helper_disconnected',
+            }),
+          );
           if (state.assignedHelperIds.length === 0 && !state.currentSosTimeoutId) {
             await startAutomatedDispatchLoop(io, redisClient, activeRoomId);
           }
@@ -543,6 +699,15 @@ async function startAutomatedDispatchLoop(io, redisClient, roomId) {
   const helperIds = batch.map((helper) => helper.userId);
   state.currentBatchHelperIds = helperIds;
 
+  runTelemetry('logHelpersAssigned', () =>
+    incidentTelemetryStore.logHelpersAssigned({
+      incidentId: state.incidentId,
+      roomId,
+      victimLocation: currentVictimLocation,
+      helpers: batch,
+    }),
+  );
+
   io.to(`user:${victimUserId}`).emit(`sos_helpers_${roomId}`, { roomId, helpers: batch });
 
   for (const helper of batch) {
@@ -601,5 +766,6 @@ async function cleanupRoom(roomId, redisClient, options = {}) {
     }
   }
 
+  incidentTelemetryStore.clearIncident(state.incidentId);
   activeEmergencyRooms.delete(roomId);
 }

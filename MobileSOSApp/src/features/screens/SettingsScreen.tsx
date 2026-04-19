@@ -15,6 +15,7 @@ import {
   getCommunityAvailabilitySnapshot,
   setCommunityAvailability,
 } from '../../services/communityAvailability';
+import { signOut } from 'aws-amplify/auth';
 
 type NavigationLike = { 
   navigate: (screen: string, params?: Record<string, any>) => void;
@@ -26,8 +27,9 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
   const [isAvailable, setIsAvailable] = useState(true);
   const [statusText, setStatusText] = useState('Loading availability...');
   const [userName, setUserName] = useState('SafeGuard User');
-  const [userEmail, setUserEmail] = useState('local-demo@safeguard.app');
+  const [userEmail, setUserEmail] = useState('loading@safeguard.app');
   const [isBusy, setIsBusy] = useState(true);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     const bootstrap = async () => {
@@ -36,10 +38,11 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
         setIsAvailable(snapshot.isAvailable);
         setStatusText(snapshot.statusText);
         setUserName(snapshot.session.name);
-        setUserEmail(`${snapshot.session.userId}@local.demo`);
+        setUserEmail(snapshot.session.email);
       } catch (error: any) {
         setStatusText(error?.message || 'Failed to load community availability.');
       } finally {
+        setIsLoading(false);
         setIsBusy(false);
       }
     };
@@ -54,47 +57,13 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
       setIsAvailable(result.isAvailable);
       setStatusText(result.statusText);
       setUserName(result.session.name);
-      setUserEmail(`${result.session.userId}@local.demo`);
+      setUserEmail(result.session.email);
     } catch (error: any) {
       setStatusText(error?.message || 'Failed to update community availability.');
     } finally {
       setIsBusy(false);
     }
   };
-
-  const [userData, setUserData] = useState({ firstName: '', lastName: '', email: '' });
-  const [isLoading, setIsLoading] = useState(true);
-
-  useEffect(() => {
-    const fetchProfile = async () => {
-      try {
-        // Get token from AWS
-        const session = await fetchAuthSession();
-        const token = session.tokens?.idToken?.toString();
-        if (!token) return;
-
-        const response = await fetch(`${API_BASE_URL}/users/profile`, {
-          method: 'GET',
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          setUserData({
-            firstName: data.firstName,
-            lastName: data.lastName,
-            email: data.email
-          });
-        }
-      } catch (error) {
-        console.error("Failed to load profile data:", error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchProfile();
-  }, []);
 
   if (isLoading) {
     return (
@@ -187,7 +156,10 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
              // AWS to destroy the session securely
              try {
                 await signOut();
-                navigation.replace('AuthScreen');
+                navigation.reset({
+                  index: 0,
+                  routes: [{ name: 'AuthScreen' }],
+                });
              } catch (error) {
                 console.error("Error signing out: ", error);
              }

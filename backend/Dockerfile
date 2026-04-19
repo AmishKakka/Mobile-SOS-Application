@@ -1,24 +1,18 @@
-# Stage 1: Build Environment
-FROM node:22-alpine AS builder
-
-WORKDIR /usr/src/app
-
-COPY package*.json ./
-RUN npm install
-
-COPY . .
-
-# Stage 2: Production Environment
 FROM node:22-alpine
 
-RUN addgroup -S appgroup && adduser -S appuser -G appgroup
-USER appuser
-
 WORKDIR /usr/src/app
 
-COPY --from=builder /usr/src/app .
+RUN addgroup -S appgroup \
+  && adduser -S appuser -G appgroup
+
+COPY --chown=appuser:appgroup package*.json ./
+RUN npm ci --omit=dev \
+  && npm cache clean --force
+
+COPY --chown=appuser:appgroup src ./src
+
+USER appuser
 
 EXPOSE 3000
 
 CMD ["node", "src/server.js"]
-# CMD node scripts/seedFakeHelpers.js && timeout 3m node src/server.js

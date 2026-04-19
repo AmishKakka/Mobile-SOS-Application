@@ -1,10 +1,4 @@
-import {
-  setActiveDeviceRole,
-  getOrCreateDemoSession,
-  getStoredDemoSession,
-  syncDemoSession,
-  updateHelperAvailability,
-} from './demoSession';
+import { AppUser, getCurrentAppUser, updateCurrentUserStatus } from './appUser';
 import { getHelperModeState, setHelperModeState } from './helperMode';
 import {
   flushOfflineQueue,
@@ -17,14 +11,12 @@ import { requestLocationPermissionsForTracking } from './permissions';
 
 type CommunityAvailabilityResult = {
   isAvailable: boolean;
-  session: { userId: string; name: string; role: 'victim' | 'helper' };
+  session: AppUser;
   statusText: string;
 };
 
 export async function getCommunityAvailabilitySnapshot(): Promise<CommunityAvailabilityResult> {
-  const session =
-    (await getStoredDemoSession('helper')) ||
-    (await getOrCreateDemoSession('helper', 'Community Helper'));
+  const session = await getCurrentAppUser();
   const helperMode = await getHelperModeState();
 
   return {
@@ -37,52 +29,46 @@ export async function getCommunityAvailabilitySnapshot(): Promise<CommunityAvail
 }
 
 export async function restoreCommunityAvailability(): Promise<CommunityAvailabilityResult> {
-  const session =
-    (await getStoredDemoSession('helper')) ||
-    (await getOrCreateDemoSession('helper', 'Community Helper'));
+  const session = await getCurrentAppUser();
   const helperMode = await getHelperModeState();
-  let syncWarning = '';
-
-  try {
-    await syncDemoSession(session, { isHelperAvailable: helperMode.isAvailable });
-  } catch (error: any) {
-    syncWarning = error?.message || 'Availability sync is temporarily unavailable.';
-  }
 
   if (!helperMode.isAvailable) {
     try {
-      await setActiveDeviceRole('victim');
       await stopPassiveTracking();
-      await updateHelperAvailability(session.userId, false);
+      await updateCurrentUserStatus({
+        isHelperAvailable: false,
+        role: 'victim',
+      });
     } catch (error: any) {
       return {
         session,
         isAvailable: false,
         statusText:
-          error?.message || syncWarning || 'Community availability is off.',
+          error?.message || 'Community availability is off.',
       };
     }
 
     return {
       session,
       isAvailable: false,
-      statusText: syncWarning || 'Community availability is off.',
+      statusText: 'Community availability is off.',
     };
   }
 
   try {
-    await setActiveDeviceRole('helper');
     await registerDeviceForPush(session);
     await sendImmediateLocation(session.userId);
     await startPassiveTracking(session.userId);
     await flushOfflineQueue(session.userId);
-    await updateHelperAvailability(session.userId, true);
+    await updateCurrentUserStatus({
+      isHelperAvailable: true,
+      role: 'helper',
+    });
 
     return {
       session,
       isAvailable: true,
-      statusText:
-        syncWarning || 'Community availability is on and your last live location is synced.',
+      statusText: 'Community availability is on and your last live location is synced.',
     };
   } catch (error: any) {
     return {
@@ -98,15 +84,14 @@ export async function restoreCommunityAvailability(): Promise<CommunityAvailabil
 export async function setCommunityAvailability(
   nextValue: boolean,
 ): Promise<CommunityAvailabilityResult> {
-  const session =
-    (await getStoredDemoSession('helper')) ||
-    (await getOrCreateDemoSession('helper', 'Community Helper'));
+  const session = await getCurrentAppUser();
 
   if (!nextValue) {
-    await setActiveDeviceRole('victim');
     await stopPassiveTracking();
-    await updateHelperAvailability(session.userId, false);
-    await syncDemoSession(session, { isHelperAvailable: false });
+    await updateCurrentUserStatus({
+      isHelperAvailable: false,
+      role: 'victim',
+    });
     await setHelperModeState(false);
 
     return {
@@ -118,9 +103,10 @@ export async function setCommunityAvailability(
 
   const granted = await requestLocationPermissionsForTracking();
   if (!granted) {
-    await setActiveDeviceRole('victim');
-    await updateHelperAvailability(session.userId, false);
-    await syncDemoSession(session, { isHelperAvailable: false });
+    await updateCurrentUserStatus({
+      isHelperAvailable: false,
+      role: 'victim',
+    });
     await setHelperModeState(false);
 
     return {
@@ -130,13 +116,14 @@ export async function setCommunityAvailability(
     };
   }
 
-  await setActiveDeviceRole('helper');
   await registerDeviceForPush(session);
   await sendImmediateLocation(session.userId);
   await startPassiveTracking(session.userId);
   await flushOfflineQueue(session.userId);
-  await updateHelperAvailability(session.userId, true);
-  await syncDemoSession(session, { isHelperAvailable: true });
+  await updateCurrentUserStatus({
+    isHelperAvailable: true,
+    role: 'helper',
+  });
   await setHelperModeState(true);
 
   return {

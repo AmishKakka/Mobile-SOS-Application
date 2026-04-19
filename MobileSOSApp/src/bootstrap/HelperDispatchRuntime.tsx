@@ -7,11 +7,7 @@ import {
 } from '@react-native-firebase/messaging';
 import { useEffect, useRef } from 'react';
 
-import {
-  getActiveDeviceRole,
-  getOrCreateDemoSession,
-  syncDemoSession,
-} from '../services/demoSession';
+import { getCurrentAppUser, updateCurrentUserStatus } from '../services/appUser';
 import { getHelperModeState } from '../services/helperMode';
 import { flushOfflineQueue } from '../services/locationTracker';
 import { registerSocketUser } from '../services/socketService';
@@ -66,14 +62,13 @@ export default function HelperDispatchRuntime() {
   const lastOpenedAtRef = useRef(0);
 
   const isHelperDispatchEnabled = async (payload?: IncomingSOSPayload | null) => {
-    const activeRole = await getActiveDeviceRole();
     const helperMode = await getHelperModeState();
 
-    if (activeRole !== 'helper' || !helperMode.isAvailable) {
+    if (!helperMode.isAvailable) {
       return null;
     }
 
-    const session = await getOrCreateDemoSession('helper', 'Community Helper');
+    const session = await getCurrentAppUser();
 
     if (!session || !helperMode.isAvailable) {
       return null;
@@ -93,10 +88,9 @@ export default function HelperDispatchRuntime() {
         return;
       }
 
-      registerSocketUser(session.userId, 'helper', session.name);
-
       try {
-        await syncDemoSession(session, { isHelperAvailable: true });
+        await registerSocketUser(session.userId, 'helper', session.name);
+        await updateCurrentUserStatus({ isHelperAvailable: true, role: 'helper' });
         await flushOfflineQueue(session.userId);
       } catch (error) {
         console.warn('[HELPER RUNTIME] Failed to restore helper runtime:', error);

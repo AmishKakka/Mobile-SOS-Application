@@ -35,6 +35,36 @@ async function resolveRegion(redisClient, userId, fallbackLocation) {
   return computeRegion(fallbackLocation);
 }
 
+function normalizeRole(role) {
+  if (typeof role !== 'string') {
+    return 'victim';
+  }
+
+  const normalized = role.trim().toLowerCase();
+  if (normalized === 'helper') {
+    return 'helper';
+  }
+  if (normalized === 'both') {
+    return 'both';
+  }
+  if (normalized === 'contact') {
+    return 'contact';
+  }
+
+  return 'victim';
+}
+
+function isHelperCapableUser(user = {}) {
+  const normalizedRole = normalizeRole(user.role);
+  const helperFlag = user.helperProfile?.isHelper;
+
+  if (typeof helperFlag === 'boolean') {
+    return helperFlag;
+  }
+
+  return normalizedRole === 'helper' || normalizedRole === 'both';
+}
+
 async function syncHelperAvailabilityIndex(redisClient, user = {}) {
   if (!redisClient) {
     throw new Error('redisClient is required.');
@@ -46,14 +76,16 @@ async function syncHelperAvailabilityIndex(redisClient, user = {}) {
   }
 
   const previousStatus = await redisClient.hgetall(`helper-status:${userId}`);
-  const role = typeof user.role === 'string' ? user.role : 'victim';
+  const normalizedRole = normalizeRole(user.role);
   const isAvailable = Boolean(user.isHelperAvailable);
   const region = await resolveRegion(redisClient, userId, user.lastKnownLocation);
-  const isEligibleHelper = role === 'helper' && isAvailable && Boolean(region);
+  const helperCapable = isHelperCapableUser(user);
+  const helperStatusRole = helperCapable ? 'helper' : normalizedRole;
+  const isEligibleHelper = helperCapable && isAvailable && Boolean(region);
 
   const pipeline = redisClient.multi();
   pipeline.hset(`helper-status:${userId}`, {
-    role,
+    role: helperStatusRole,
     isAvailable: isAvailable ? 'true' : 'false',
     region: region || '',
     lastUpdated: String(Date.now()),
@@ -73,7 +105,7 @@ async function syncHelperAvailabilityIndex(redisClient, user = {}) {
 
   return {
     userId,
-    role,
+    role: helperStatusRole,
     isAvailable,
     region,
     isEligibleHelper,

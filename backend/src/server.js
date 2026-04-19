@@ -6,10 +6,9 @@ const cors = require('cors');
 const Redis = require('ioredis');
 const mongoose = require('mongoose');
 const initializeSocket = require('./sockets/socket');
-const User = require('./models/User');
-const { syncHelperAvailabilityIndex } = require('./services/helperAvailabilityIndex');
+const connectDB = require('./config/db')
 
-const REQUIRED_ENV = ['MONGO_URI'];
+const REQUIRED_ENV = ['MONGO_URI', 'COGNITO_USER_POOL_ID', 'COGNITO_CLIENT_ID'];
 const missing = REQUIRED_ENV.filter((key) => !process.env[key]);
 
 if (missing.length > 0) {
@@ -24,143 +23,50 @@ const REDIS_URL =
 
 const app = express();
 
-connectDB(); 
-
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '1mb' }));
 
 const userRoutes = require('./routes/userRoutes');
 app.use('/api/users', userRoutes);
 
 const server = http.createServer(app);
+let mongoReady = false;
+let serverStarted = false;
+const redisReady = {
+  main: false,
+  pub: false,
+  sub: false,
+};
 
-app.use(cors());
-app.use(express.json({ limit: '1mb' }));
+function allRedisClientsReady() {
+  return redisReady.main && redisReady.pub && redisReady.sub;
+}
 
-mongoose
-  .connect(process.env.MONGO_URI)
-  .then(() => console.log('✅ Connected to MongoDB'))
-  .catch((error) => {
-    console.error('🔥 MongoDB connection error:', error);
-    process.exit(1);
+function startServerIfReady() {
+  if (serverStarted || !mongoReady || !allRedisClientsReady()) {
+    return;
+  }
+
+  serverStarted = true;
+  console.log('✅ MongoDB and all Redis clients connected.');
+  initializeSocket(server, redisClient, pubClient, subClient);
+
+  server.listen(PORT, '0.0.0.0', () => {
+    console.log(`SafeGuard server running on port ${PORT}`);
   });
+}
 
-app.get('/health', async (req, res) => {
-  const mongoReady = mongoose.connection.readyState === 1;
+app.get('/health', (req, res) => {
+  const healthy = mongoReady && allRedisClientsReady();
 
-  res.status(mongoReady ? 200 : 503).json({
-    status: mongoReady ? 'ok' : 'degraded',
+  res.status(healthy ? 200 : 503).json({
+    status: healthy ? 'ok' : 'degraded',
     mongoReady,
+    redisReady: {
+      ...redisReady,
+      all: allRedisClientsReady(),
+    },
   });
-});
-
-app.get('/users/:userId', async (req, res) => {
-  try {
-    const user = await User.findById(req.params.userId).lean();
-
-    if (!user) {
-      return res.status(404).json({ error: 'User not found.' });
-    }
-
-    return res.status(200).json(user);
-  } catch (error) {
-    console.error('[API] Failed to fetch user:', error);
-    return res.status(500).json({ error: 'Internal server error.' });
-  }
-});
-
-app.put('/users/:userId/device', async (req, res) => {
-  const userId = String(req.params.userId || '').trim();
-  const {
-    name,
-    role,
-    fcmToken,
-    isHelperAvailable,
-    emergencyContacts,
-  } = req.body || {};
-
-  if (!userId) {
-    return res.status(400).json({ error: 'userId is required.' });
-  }
-
-  try {
-    const update = {
-      ...(typeof name === 'string' && name.trim()
-        ? { name: name.trim() }
-        : {}),
-      ...(typeof role === 'string' ? { role } : {}),
-      ...(typeof fcmToken === 'string' || fcmToken === null
-        ? { fcmToken }
-        : {}),
-      ...(typeof isHelperAvailable === 'boolean'
-        ? { isHelperAvailable }
-        : {}),
-      ...(Array.isArray(emergencyContacts) ? { emergencyContacts } : {}),
-    };
-
-    const user = await User.findByIdAndUpdate(
-      userId,
-      { $set: update, $setOnInsert: { _id: userId } },
-      { new: true, upsert: true, setDefaultsOnInsert: true }
-    ).lean();
-
-    try {
-      await syncHelperAvailabilityIndex(redisClient, user);
-    } catch (redisError) {
-      console.error('[API] Failed to sync helper availability to Redis:', redisError);
-    }
-
-    return res.status(200).json(user);
-  } catch (error) {
-    console.error('[API] Failed to upsert device/user profile:', error);
-    return res.status(500).json({ error: 'Internal server error.' });
-  }
-});
-
-app.put('/users/:userId/status', async (req, res) => {
-  const userId = String(req.params.userId || '').trim();
-  const { isHelperAvailable, lastKnownLocation } = req.body || {};
-
-  if (!userId) {
-    return res.status(400).json({ error: 'userId is required.' });
-  }
-
-  try {
-    const update = {};
-
-    if (typeof isHelperAvailable === 'boolean') {
-      update.isHelperAvailable = isHelperAvailable;
-    }
-
-    if (
-      lastKnownLocation &&
-      Number.isFinite(Number(lastKnownLocation.lat)) &&
-      Number.isFinite(Number(lastKnownLocation.lng))
-    ) {
-      update.lastKnownLocation = {
-        lat: Number(lastKnownLocation.lat),
-        lng: Number(lastKnownLocation.lng),
-        updatedAt: new Date(),
-      };
-    }
-
-    const user = await User.findByIdAndUpdate(
-      userId,
-      { $set: update, $setOnInsert: { _id: userId } },
-      { new: true, upsert: true, setDefaultsOnInsert: true }
-    ).lean();
-
-    try {
-      await syncHelperAvailabilityIndex(redisClient, user);
-    } catch (redisError) {
-      console.error('[API] Failed to sync helper status to Redis:', redisError);
-    }
-
-    return res.status(200).json(user);
-  } catch (error) {
-    console.error('[API] Failed to update user status:', error);
-    return res.status(500).json({ error: 'Internal server error.' });
-  }
 });
 
 // Redis Setup
@@ -185,6 +91,7 @@ const redisOpts = {
 const redisClient = new Redis(REDIS_URL, redisOpts);
 const pubClient = redisClient.duplicate();
 const subClient = redisClient.duplicate();
+app.locals.redisClient = redisClient;
 
 redisClient.on('error', (error) =>
   console.error('Redis main error:', error.message)
@@ -196,30 +103,24 @@ subClient.on('error', (error) =>
   console.error('Redis sub error:', error.message)
 );
 
-let readyCount = 0;
-
-const onRedisReady = () => {
-  readyCount += 1;
-
-  if (readyCount < 3) {
-    return;
-  }
-
-  console.log('✅ All Redis clients connected.');
-  initializeSocket(server, redisClient, pubClient, subClient);
-
-  server.listen(PORT, '0.0.0.0', () => {
-    console.log(`SafeGuard server running on port ${PORT}`);
-  });
-};
-
-redisClient.on('ready', onRedisReady);
-pubClient.on('ready', onRedisReady);
-subClient.on('ready', onRedisReady);
+redisClient.on('ready', () => {
+  redisReady.main = true;
+  startServerIfReady();
+});
+pubClient.on('ready', () => {
+  redisReady.pub = true;
+  startServerIfReady();
+});
+subClient.on('ready', () => {
+  redisReady.sub = true;
+  startServerIfReady();
+});
 
 async function shutdown(signal) {
   console.log(`${signal} received — shutting down gracefully...`);
-  server.close(() => console.log('HTTP server closed.'));
+  if (serverStarted) {
+    server.close(() => console.log('HTTP server closed.'));
+  }
 
   await Promise.allSettled([
     redisClient.quit(),
@@ -233,3 +134,13 @@ async function shutdown(signal) {
 
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
+
+connectDB()
+  .then(() => {
+    mongoReady = true;
+    startServerIfReady();
+  })
+  .catch((error) => {
+    console.error('🔥 MongoDB connection error:', error);
+    process.exit(1);
+  });

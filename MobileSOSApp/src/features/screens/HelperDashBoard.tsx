@@ -11,13 +11,14 @@ import {
 import { Shield, Users, MapPin, Handshake } from 'lucide-react-native';
 
 import { getCommunityAvailabilitySnapshot } from '../../services/communityAvailability';
+import type { AppUser } from '../../services/appUser';
 
 type NavigationLike = { navigate: (screen: string, params?: Record<string, any>) => void };
 
 type HelperDashboardScreenProps = { navigation: NavigationLike };
 
 const HelperDashboardScreen: React.FC<HelperDashboardScreenProps> = ({ navigation }) => {
-  const [session, setSession] = useState<{ userId: string; name: string } | null>(null);
+  const [session, setSession] = useState<AppUser | null>(null);
   const [isAvailable, setIsAvailable] = useState(false);
   const [isBooting, setIsBooting] = useState(true);
   const [statusText, setStatusText] = useState('Preparing community helper dashboard...');
@@ -59,13 +60,13 @@ const HelperDashboardScreen: React.FC<HelperDashboardScreenProps> = ({ navigatio
           <Text style={styles.subtitle}>Ready to make a difference in your community</Text>
         </View>
 
-        {/* <View style={[styles.card, styles.shadow]}>
+        <View style={[styles.card, styles.shadow]}>
           <Text style={styles.cardTitle}>
             {isAvailable ? 'Community Availability Is On' : 'Community Availability Is Off'}
           </Text>
           <Text style={styles.cardSubtitle}>{statusText}</Text>
           <Text style={styles.cardMeta}>
-            {session?.userId ? `Current user: ${session.userId}` : 'Current user unavailable'}
+            {session?.email ? `Signed in as: ${session.email}` : 'Current user unavailable'}
           </Text>
           <TouchableOpacity
             style={styles.settingsButton}
@@ -74,7 +75,7 @@ const HelperDashboardScreen: React.FC<HelperDashboardScreenProps> = ({ navigatio
           >
             <Text style={styles.settingsButtonText}>Manage Availability In Settings</Text>
           </TouchableOpacity>
-        </View> */}
+        </View>
 
         <InfoCard
           icon={<Users color="#374151" size={20} />}

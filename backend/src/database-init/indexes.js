@@ -7,3 +7,9 @@ db.incidents.createIndex({ personInNeedId: 1, startedAt: -1 });
 db.incidents.createIndex({ "helpers.helperId": 1, startedAt: -1 });
 
 db.incidents.createIndex({ status: 1, startedAt: -1 });
+
+db.incident_events.createIndex({ incidentId: 1, ts: 1 });
+
+db.incident_events.createIndex({ incidentId: 1, helperId: 1, ts: 1 });
+
+db.incident_helper_tracks_ts.createIndex({ "meta.incidentId": 1, "meta.helperId": 1, ts: 1 });

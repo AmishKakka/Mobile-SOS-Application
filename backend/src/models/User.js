@@ -9,6 +9,9 @@ const userSchema = new mongoose.Schema({
     // NEW: AWS Cognito Unique Identifier
     cognitoId: { type: String, required: true, unique: true },
 
+    // Display fields used by live SOS and notification flows
+    name: { type: String, maxlength: 240 },
+
     // Auth & Basic Info
     firstName: { type: String, required: true, minlength: 1, maxlength: 120 },
     lastName: { type: String, required: true, minlength: 1, maxlength: 120 },
@@ -40,7 +43,18 @@ const userSchema = new mongoose.Schema({
     },
 
     // System App Logic
-    role: { type: String, enum: ["PIN", "HELPER", "BOTH"], default: "BOTH" },
+    role: {
+        type: String,
+        enum: ["PIN", "HELPER", "BOTH", "victim", "helper", "contact"],
+        default: "victim"
+    },
+    fcmToken: { type: String, default: null },
+    isHelperAvailable: { type: Boolean, default: false },
+    lastKnownLocation: {
+        lat: { type: Number },
+        lng: { type: Number },
+        updatedAt: { type: Date }
+    },
     status: {
         isActive: { type: Boolean, default: true },
         isVerified: { type: Boolean, default: true } // Auto-true since AWS handles email verification

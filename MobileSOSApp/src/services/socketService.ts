@@ -1,11 +1,6 @@
 import { io, Socket } from 'socket.io-client';
-import { SOCKET_URL } from '../config/keys';
-
-// ── Point this at your backend ───────────────────────────────────────────────
-// Local dev  : 'http://localhost:3000'   (backend running locally / docker)
-// Use your device IP address instead of "localhost" using -> ipconfig getifaddr en0
-// Production : your ALB DNS from terraform output
-const BACKEND_URL = 'http://localhost:3000';
+import { SOCKET_URL } from '../config/config';
+import { getCurrentIdToken } from './appUser';
 
 let socket: Socket | null = null;
 
@@ -31,11 +26,16 @@ export function getSocket(): Socket {
   return socket;
 }
 
-export function registerSocketUser(userId: string, role: string, name?: string) {
+export async function registerSocketUser(userId: string, role: string, name?: string) {
   const activeSocket = getSocket();
+  const token = await getCurrentIdToken();
+
+  if (!token) {
+    throw new Error('Missing authenticated token for socket registration.');
+  }
 
   const emitRegistration = () => {
-    activeSocket.emit('register_user', { userId, role, name });
+    activeSocket.emit('register_user', { userId, role, name, token });
   };
 
   if (activeSocket.connected) {

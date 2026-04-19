@@ -2,11 +2,14 @@ import type { ParamListBase } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { ChevronRight, Lock, MapPin, RefreshCw, Shield, Users, Zap } from 'lucide-react-native';
 import React from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 type GetStartedScreenProps = {
   navigation: NativeStackNavigationProp<ParamListBase>;
 };
+
+const ONBOARDING_SEEN_KEY = '@safeguard_has_seen_get_started';
 
 const features = [
   {
@@ -42,6 +45,11 @@ const features = [
 ];
 
 export default function GetStartedScreen({ navigation }: GetStartedScreenProps) {
+  const handleGetStarted = async () => {
+    await AsyncStorage.setItem(ONBOARDING_SEEN_KEY, 'true');
+    navigation.replace('LocationAccess');
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
@@ -69,7 +77,7 @@ export default function GetStartedScreen({ navigation }: GetStartedScreenProps) 
         <TouchableOpacity
           style={styles.mainButton}
           activeOpacity={0.85}
-          onPress={() => navigation.navigate('LocationAccess')}
+          onPress={handleGetStarted}
         >
           <Text style={styles.mainButtonText}>Get Started</Text>
           <ChevronRight color="#FFF" size={20} />

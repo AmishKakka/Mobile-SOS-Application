@@ -18,10 +18,7 @@ import type { ParamListBase } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
 
-import {
-  getActiveDeviceRole,
-  getOrCreateDemoSession,
-} from '../../services/demoSession';
+import { getCurrentAppUser } from '../../services/appUser';
 import { getHelperModeState } from '../../services/helperMode';
 import { registerSocketUser, getSocket } from '../../services/socketService';
 
@@ -68,11 +65,10 @@ export default function HelperSOSNotificationScreen({ navigation, route }: Props
 
   useEffect(() => {
     Promise.all([
-      getActiveDeviceRole(),
-      getOrCreateDemoSession('helper', 'Community Helper'),
+      getCurrentAppUser(),
       getHelperModeState(),
-    ]).then(([activeRole, session, helperMode]) => {
-      if (!session || activeRole !== 'helper' || !helperMode.isAvailable) {
+    ]).then(async ([session, helperMode]) => {
+      if (!session || !helperMode.isAvailable) {
         Alert.alert('Helper mode inactive', 'This device is not currently acting as a helper.', [
           {
             text: 'OK',
@@ -83,7 +79,11 @@ export default function HelperSOSNotificationScreen({ navigation, route }: Props
       }
 
       setHelperSession(session);
-      registerSocketUser(session.userId, 'helper', session.name);
+      try {
+        await registerSocketUser(session.userId, 'helper', session.name);
+      } catch (error) {
+        console.warn('[HELPER SCREEN] Failed to register helper socket:', error);
+      }
     });
 
     Animated.loop(

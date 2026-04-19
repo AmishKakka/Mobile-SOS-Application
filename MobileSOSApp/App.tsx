@@ -2,6 +2,7 @@ import { StatusBar, StyleSheet, useColorScheme, View, ActivityIndicator } from '
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { NavigationContainer } from '@react-navigation/native';
 import React, { useEffect, useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import SettingsStack from './src/navigation/SettingsStack';
 import HelperDispatchRuntime from './src/bootstrap/HelperDispatchRuntime';
 import { flushPendingNavigation, navigationRef } from './src/navigation/navigationRef';
@@ -11,6 +12,8 @@ import { VictimSOSProvider } from './src/features/sos/VictimSOSContext';
 import { Amplify } from 'aws-amplify';
 import { COGNITO_USER_POOL_ID, COGNITO_CLIENT_ID } from '@env';
 import { getCurrentUser } from 'aws-amplify/auth';
+
+const ONBOARDING_SEEN_KEY = '@safeguard_has_seen_get_started';
 
 Amplify.configure({
   Auth: {
@@ -31,24 +34,25 @@ function App() {
   const [initialRoute, setInitialRoute] = useState('AuthScreen');
 
   useEffect(() => {
-    const checkUserSession = async () => {
+    const checkBootstrapState = async () => {
       try {
-        // Ask AWS if someone is currently logged in on this phone
+        const onboardingSeen = (await AsyncStorage.getItem(ONBOARDING_SEEN_KEY)) === 'true';
+
+        if (!onboardingSeen) {
+          setInitialRoute('GetStarted');
+          return;
+        }
+
         await getCurrentUser();
-        
-        // If the above line doesn't throw an error, the user is logged in.
-        // Skip the AuthScreen and re-direct them right into the main app.
-        setInitialRoute('MainDashboard'); 
-      } catch (error) {
-        // If it throws an error. Send them to the login screen.
+        setInitialRoute('MainDashboard');
+      } catch {
         setInitialRoute('AuthScreen');
       } finally {
-        // Turn off the loading spinner
         setIsCheckingAuth(false);
       }
     };
 
-    checkUserSession();
+    checkBootstrapState();
   }, []);
 
   // Show a blank screen with a spinner while asking AWS for the token

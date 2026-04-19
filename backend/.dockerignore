@@ -1,0 +1,17 @@
+.env
+.env.*
+node_modules
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.DS_Store
+.git
+.gitignore
+coverage
+*.log
+tmp
+temp
+scripts
+addons
+*.md

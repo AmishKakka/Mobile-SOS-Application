@@ -5,6 +5,11 @@ resource "aws_secretsmanager_secret" "mongo_uri" {
   tags                    = { Name = "sos-app-mongo-uri" }
 }
 
+resource "aws_secretsmanager_secret_version" "mongo_uri" {
+  secret_id     = aws_secretsmanager_secret.mongo_uri.id
+  secret_string = var.mongo_uri_secret_value
+}
+
 # resource "aws_secretsmanager_secret" "jwt_secret" {
 #   name                    = "sos-app/jwt-secret"
 #   description             = "JWT signing secret for authentication tokens"
@@ -19,9 +24,14 @@ resource "aws_secretsmanager_secret" "fcm_key" {
   tags                    = { Name = "sos-app-fcm-key" }
 }
 
+resource "aws_secretsmanager_secret_version" "fcm_key" {
+  secret_id     = aws_secretsmanager_secret.fcm_key.id
+  secret_string = var.fcm_server_key_secret_value
+}
+
 resource "aws_ecr_repository" "backend" {
   name                 = "sos-backend"
-  image_tag_mutability = "MUTABLE"
+  image_tag_mutability = "IMMUTABLE"
 
   image_scanning_configuration {
     scan_on_push = true
@@ -54,9 +64,14 @@ resource "aws_ecs_task_definition" "backend" {
   execution_role_arn       = var.ecs_execution_role_arn
   task_role_arn            = var.ecs_task_role_arn
 
+  runtime_platform {
+    cpu_architecture        = var.container_cpu_architecture
+    operating_system_family = "LINUX"
+  }
+
   container_definitions = jsonencode([{
     name      = "sos-backend"
-    image     = "${aws_ecr_repository.backend.repository_url}:latest"
+    image     = "${aws_ecr_repository.backend.repository_url}:${var.backend_image_tag}"
     essential = true
 
     portMappings = [{

@@ -11,11 +11,8 @@ import { Alert, Linking } from 'react-native';
 import Geolocation from 'react-native-geolocation-service';
 
 import { GOOGLE_MAPS_API_KEY } from '../../config/keys';
+import { getCurrentAppUser } from '../../services/appUser';
 import { restoreCommunityAvailability } from '../../services/communityAvailability';
-import {
-  getOrCreateDemoSession,
-  getStoredDemoSession,
-} from '../../services/demoSession';
 import { registerDeviceForPush, subscribeToTokenRefresh } from '../../services/fcmSetup';
 import { requestForegroundLocationPermission } from '../../services/permissions';
 import { registerSocketUser } from '../../services/socketService';
@@ -112,19 +109,17 @@ export function VictimSOSProvider({ children }: { children: ReactNode }) {
 
     const bootstrap = async () => {
       try {
-        const demoSession = await getOrCreateDemoSession('victim', 'Demo Victim');
+        const appUser = await getCurrentAppUser();
 
-        setSession(demoSession);
-        registerSocketUser(demoSession.userId, demoSession.role, demoSession.name);
-        const helperAvailability = await restoreCommunityAvailability();
+        setSession({
+          userId: appUser.userId,
+          name: appUser.name,
+        });
+        await registerSocketUser(appUser.userId, 'victim', appUser.name);
+        await restoreCommunityAvailability();
         try {
-          const helperSession = await getStoredDemoSession('helper');
-          const pushSession =
-            helperAvailability.isAvailable && helperSession
-              ? helperSession
-              : demoSession;
-          await registerDeviceForPush(pushSession);
-          unsubscribeTokenRefresh = subscribeToTokenRefresh(pushSession);
+          await registerDeviceForPush(appUser);
+          unsubscribeTokenRefresh = subscribeToTokenRefresh(appUser);
         } catch (pushError) {
           console.warn('[FCM] Push setup skipped on victim app:', pushError);
         }

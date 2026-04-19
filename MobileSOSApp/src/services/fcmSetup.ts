@@ -6,27 +6,14 @@ import {
   requestPermission,
 } from '@react-native-firebase/messaging';
 import { PermissionsAndroid, Platform } from 'react-native';
-import { API_BASE_URL } from '../config/keys';
-import type { DemoSession } from './demoSession';
+import type { AppUser } from './appUser';
+import { updateCurrentUserDevice } from './appUser';
 
-async function upsertDeviceToken(userId: string, token: string | null) {
-  const response = await fetch(`${API_BASE_URL}/users/${userId}/device`, {
-    method: 'PUT',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      fcmToken: token,
-    }),
-  });
-
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`Failed to save FCM token: ${response.status} ${text}`);
-  }
+async function upsertDeviceToken(_userId: string, token: string | null) {
+  await updateCurrentUserDevice({ fcmToken: token });
 }
 
-export async function registerDeviceForPush(session: DemoSession) {
+export async function registerDeviceForPush(session: Pick<AppUser, 'userId'>) {
   const app = getApp();
   const messaging = getMessaging(app);
 
@@ -54,7 +41,7 @@ export async function registerDeviceForPush(session: DemoSession) {
   return token;
 }
 
-export function subscribeToTokenRefresh(session: DemoSession) {
+export function subscribeToTokenRefresh(session: Pick<AppUser, 'userId'>) {
   const app = getApp();
   const messaging = getMessaging(app);
 

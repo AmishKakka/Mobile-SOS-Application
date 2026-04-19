@@ -92,7 +92,9 @@ export default function HelperTrackingScreen({ navigation, route: navRoute }: Pr
 
   useEffect(() => {
     const socket = getSocket();
-    registerSocketUser(helperId, 'helper', helperName);
+    registerSocketUser(helperId, 'helper', helperName).catch((error) => {
+      console.warn('[HELPER TRACKING] Failed to register helper socket:', error);
+    });
 
     const onVictimMoved = (nextLocation: { lat: number; lng: number }) => {
       setVictimLocation({ latitude: nextLocation.lat, longitude: nextLocation.lng });

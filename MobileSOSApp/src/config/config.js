@@ -1,16 +1,20 @@
-let BACKEND_URL;
+import {
+  BACKEND_ORIGIN as BACKEND_ORIGIN_ENV,
+  GOOGLE_MAPS_API_KEY as GOOGLE_MAPS_API_KEY_ENV,
+} from '@env';
 
-if (__DEV__) {
-
-    // DEVELOPMENT MODE: Running locally via Emulator
-    const IP_ADDRESS = '192.168.0.93'; // Update this if your laptop IP changes
-    const PORT = '3000';
-    BACKEND_URL = `http://${IP_ADDRESS}:${PORT}`;
-
-} else {
-
-    // PRODUCTION MODE: App is downloaded from App Store/Play Store
-    BACKEND_URL = 'https://api.safeguard.com'; // Your future cloud server URL
+function normalizeOrigin(origin) {
+  return String(origin || '').trim().replace(/\/+$/, '');
 }
 
-export const API_BASE_URL = `${BACKEND_URL}/api`;
+const BACKEND_ORIGIN = normalizeOrigin(BACKEND_ORIGIN_ENV);
+
+if (!BACKEND_ORIGIN) {
+  throw new Error(
+    'Missing BACKEND_ORIGIN in MobileSOSApp/.env. Set it to your deployed backend origin before running the app.'
+  );
+}
+
+export const API_BASE_URL = `${BACKEND_ORIGIN}/api`;
+export const SOCKET_URL = BACKEND_ORIGIN;
+export const GOOGLE_MAPS_API_KEY = String(GOOGLE_MAPS_API_KEY_ENV || '').trim();

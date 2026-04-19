@@ -82,9 +82,22 @@ export default function AuthScreen({ navigation }: AuthScreenProps) {
                     username: email,
                     confirmationCode: authCode
                 });
-
-                setMessage("Email verified! You can now log in.");
-                setMode("signin");
+                try {
+                    await signIn({ username: email, password });
+                    setMessage("Email verified and sign in successful!");
+                    setTimeout(() => {
+                        navigation.reset({
+                            index: 0,
+                            routes: [{ name: "MainDashboard" }],
+                        });
+                    }, 600);
+                } catch (signInAfterVerifyError: any) {
+                    setMessage(
+                        signInAfterVerifyError?.message ||
+                        "Email verified. Please sign in to continue."
+                    );
+                    setMode("signin");
+                }
 
             } else {
                 // SIGN IN WITH AWS COGNITO
@@ -94,7 +107,10 @@ export default function AuthScreen({ navigation }: AuthScreenProps) {
                 
                 // AWS automatically saves the token securely.
                 setTimeout(() => {
-                    navigation.replace("MainDashboard"); 
+                    navigation.reset({
+                        index: 0,
+                        routes: [{ name: "MainDashboard" }],
+                    }); 
                 }, 1000);
             }
         } catch (error: any) {
