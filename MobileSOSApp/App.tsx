@@ -12,6 +12,7 @@ import { VictimSOSProvider } from './src/features/sos/VictimSOSContext';
 import { Amplify } from 'aws-amplify';
 import { COGNITO_USER_POOL_ID, COGNITO_CLIENT_ID } from '@env';
 import { getCurrentUser } from 'aws-amplify/auth';
+import { getCurrentIdToken } from './src/services/appUser';
 
 const ONBOARDING_SEEN_KEY = '@safeguard_has_seen_get_started';
 
@@ -44,6 +45,12 @@ function App() {
         }
 
         await getCurrentUser();
+        const idToken = await getCurrentIdToken();
+
+        if (!idToken) {
+          throw new Error('Authenticated session is missing an ID token.');
+        }
+
         setInitialRoute('MainDashboard');
       } catch {
         setInitialRoute('AuthScreen');
@@ -68,7 +75,7 @@ function App() {
     <SafeAreaProvider>
       <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
       <NavigationContainer ref={navigationRef} onReady={flushPendingNavigation}>
-        <VictimSOSProvider children={undefined}>
+        <VictimSOSProvider>
           {/* Pass the dynamic starting route down to your Navigator */}
           <SettingsStack initialRouteName={initialRoute} />
         </VictimSOSProvider>

@@ -13,8 +13,9 @@ import {
     View,
 } from "react-native";
 
-
-import { signUp, signIn, confirmSignUp } from 'aws-amplify/auth';
+import { confirmSignUp, signIn, signUp } from 'aws-amplify/auth';
+import { getCurrentIdToken } from '../../services/appUser';
+import { useVictimSOS } from '../sos/VictimSOSContext';
 
 type AuthMode = "signin" | "register" | "verify";
 
@@ -23,6 +24,7 @@ type AuthScreenProps = {
 };
 
 export default function AuthScreen({ navigation }: AuthScreenProps) {
+    const { refreshSession } = useVictimSOS();
     const [mode, setMode] = useState<AuthMode>("signin");
     const [firstName, setFirstName] = useState("");
     const [lastName, setLastName] = useState("");
@@ -54,6 +56,22 @@ export default function AuthScreen({ navigation }: AuthScreenProps) {
         return true;
     }, [confirmPassword, email, firstName, lastName, isRegister, isVerifying, password, authCode, hasLength, hasNumber, hasSymbol]);
 
+    async function ensureSignedInSession(username: string, passwordValue: string) {
+        const result = await signIn({ username, password: passwordValue });
+
+        if (!result.isSignedIn) {
+            const step = result.nextStep?.signInStep || 'UNKNOWN_STEP';
+            throw new Error(`Sign-in did not complete. Next step required: ${step}`);
+        }
+
+        const idToken = await getCurrentIdToken({ retries: 8, delayMs: 400, forceRefresh: true });
+
+        if (!idToken) {
+            throw new Error('Sign-in completed but no ID token was returned.');
+        }
+        return idToken;
+    }
+
     async function onSubmit() {
         if (!canSubmit) return;
         setMessage("");
@@ -83,7 +101,8 @@ export default function AuthScreen({ navigation }: AuthScreenProps) {
                     confirmationCode: authCode
                 });
                 try {
-                    await signIn({ username: email, password });
+                    await ensureSignedInSession(email, password);
+                    await refreshSession();
                     setMessage("Email verified and sign in successful!");
                     setTimeout(() => {
                         navigation.reset({
@@ -101,7 +120,8 @@ export default function AuthScreen({ navigation }: AuthScreenProps) {
 
             } else {
                 // SIGN IN WITH AWS COGNITO
-                await signIn({ username: email, password });
+                await ensureSignedInSession(email, password);
+                await refreshSession();
                 
                 setMessage("Sign in successful!");
                 

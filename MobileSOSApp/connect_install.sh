@@ -5,7 +5,7 @@ set -Eeuo pipefail
 # Hardcode values here
 # =========================
 
-APK_PATH="/Users/omchauhan/Desktop/Mobile-SOS-Application/MobileSOSApp/android/app/build/outputs/apk/debug/app-debug.apk"
+APK_PATH="/Users/omchauhan/Desktop/Mobile-SOS-Application/MobileSOSApp/android/app/build/outputs/apk/release/app-release.apk"
 PACKAGE_NAME="com.mobilesosapp"
 
 # Use the CONNECT endpoints shown in Wireless debugging after pairing
@@ -13,15 +13,15 @@ PACKAGE_NAME="com.mobilesosapp"
 DEVICE_NAMES=(
   "Phone Aksh"
   "Phone Amish"
-  "Phone Realme"
+  # "Phone Realme"
   "Phone Harsh"
 )
 
 CONNECT_ADDRS=(
-  "192.168.0.70:40919"
-  "192.168.0.185:38287"
-  "192.168.0.61:42547"
-  "192.168.0.213:33695"
+  "192.168.0.70:41341"
+  "192.168.0.185:40413"
+  # "192.168.0.61:42547"
+  "192.168.0.213:37115"
 )
 
 UNINSTALL_FIRST="true"

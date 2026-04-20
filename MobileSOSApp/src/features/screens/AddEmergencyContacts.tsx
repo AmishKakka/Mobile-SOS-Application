@@ -164,6 +164,7 @@ const EmergencyContactsScreen: React.FC<Props> = ({ navigation }) => {
           >
             <Text style={styles.cancelFormText}>Cancel</Text>
           </TouchableOpacity>
+        </View>
 
         {/* Add Contact Form */}
         {contacts.length < 5 ? (

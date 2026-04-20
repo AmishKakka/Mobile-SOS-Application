@@ -25,9 +25,57 @@ async function getAuthHeaders() {
   };
 }
 
-export async function getCurrentIdToken() {
-  const session = await fetchAuthSession();
-  return session.tokens?.idToken?.toString() || null;
+async function fetchWithAuth(
+  path: string,
+  init: RequestInit,
+  headers: Record<string, string>,
+) {
+  const url = `${API_BASE_URL}${path}`;
+
+  try {
+    return await fetch(url, {
+      ...init,
+      headers: {
+        ...headers,
+        ...(init.headers || {}),
+      },
+    });
+  } catch (error: any) {
+    const message = error?.message || 'Unknown network error';
+    throw new Error(
+      `Network request failed for ${url}. ${message}. Check BACKEND_ORIGIN, ALB health, and Android cleartext HTTP settings.`
+    );
+  }
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export async function getCurrentIdToken(options?: {
+  retries?: number;
+  delayMs?: number;
+  forceRefresh?: boolean;
+}) {
+  const retries = options?.retries ?? 5;
+  const delayMs = options?.delayMs ?? 350;
+
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    const session = await fetchAuthSession({
+      forceRefresh: options?.forceRefresh === true && attempt === retries,
+    });
+    const token = session.tokens?.idToken?.toString() || null;
+
+    if (token) {
+      return token;
+    }
+
+    if (attempt < retries) {
+      await sleep(delayMs);
+    }
+  }
+
+  return null;
 }
 
 function normalizeUser(raw: any): AppUser {
@@ -51,16 +99,15 @@ export async function syncAuthenticatedUser() {
   const currentUser = await getCurrentUser();
   const attributes = await fetchUserAttributes();
 
-  const response = await fetch(`${API_BASE_URL}/users/sync`, {
+  const response = await fetchWithAuth('/users/sync', {
     method: 'POST',
-    headers,
     body: JSON.stringify({
       cognitoId: currentUser.userId,
       email: attributes.email,
       firstName: attributes.given_name,
       lastName: attributes.family_name,
     }),
-  });
+  }, headers);
 
   if (!response.ok) {
     const text = await response.text();
@@ -74,17 +121,15 @@ export async function syncAuthenticatedUser() {
 export async function getCurrentAppUser(): Promise<AppUser> {
   const headers = await getAuthHeaders();
 
-  let response = await fetch(`${API_BASE_URL}/users/profile`, {
+  let response = await fetchWithAuth('/users/profile', {
     method: 'GET',
-    headers,
-  });
+  }, headers);
 
   if (response.status === 404) {
     await syncAuthenticatedUser();
-    response = await fetch(`${API_BASE_URL}/users/profile`, {
+    response = await fetchWithAuth('/users/profile', {
       method: 'GET',
-      headers,
-    });
+    }, headers);
   }
 
   if (!response.ok) {
@@ -104,14 +149,13 @@ export async function updateCurrentUserDevice({
   role?: string;
 }) {
   const headers = await getAuthHeaders();
-  const response = await fetch(`${API_BASE_URL}/users/device`, {
+  const response = await fetchWithAuth('/users/device', {
     method: 'PUT',
-    headers,
     body: JSON.stringify({
       ...(fcmToken !== undefined ? { fcmToken } : {}),
       ...(role ? { role } : {}),
     }),
-  });
+  }, headers);
 
   if (!response.ok) {
     const text = await response.text();
@@ -131,15 +175,14 @@ export async function updateCurrentUserStatus({
   role?: string;
 }) {
   const headers = await getAuthHeaders();
-  const response = await fetch(`${API_BASE_URL}/users/status`, {
+  const response = await fetchWithAuth('/users/status', {
     method: 'PUT',
-    headers,
     body: JSON.stringify({
       ...(typeof isHelperAvailable === 'boolean' ? { isHelperAvailable } : {}),
       ...(lastKnownLocation ? { lastKnownLocation } : {}),
       ...(role ? { role } : {}),
     }),
-  });
+  }, headers);
 
   if (!response.ok) {
     const text = await response.text();

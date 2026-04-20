@@ -1,6 +1,7 @@
 import React, {
   createContext,
   ReactNode,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
@@ -51,6 +52,7 @@ type VictimSOSContextValue = {
   triggerSOS: () => Promise<void>;
   cancelSOS: () => void;
   trigger911Call: () => Promise<void>;
+  refreshSession: () => Promise<void>;
 };
 
 const VictimSOSContext = createContext<VictimSOSContextValue | null>(null);
@@ -74,6 +76,7 @@ export function VictimSOSProvider({ children }: { children: ReactNode }) {
   const [assignedRouteCoords, setAssignedRouteCoords] = useState<DeviceLocation[] | null>(null);
   const [assignedEtaText, setAssignedEtaText] = useState<string | null>(null);
   const emergencyDialPromptedRef = useRef(false);
+  const unsubscribeTokenRefreshRef = useRef<(() => void) | undefined>(undefined);
   const lastAssignedRouteRef = useRef<{
     victim: DeviceLocation;
     helper: DeviceLocation;
@@ -96,54 +99,82 @@ export function VictimSOSProvider({ children }: { children: ReactNode }) {
     onVictimLocationUpdate: setCurrentLocation,
   });
 
-  const trigger911Call = async () => {
+  const trigger911Call = useCallback(async () => {
     try {
       await Linking.openURL('tel:911');
     } catch {
       Alert.alert('Error', 'Could not open the dialer.');
     }
-  };
+  }, []);
 
-  useEffect(() => {
-    let unsubscribeTokenRefresh: (() => void) | undefined;
+  const bootstrap = async (options?: { silentAuthFailure?: boolean }) => {
+    try {
+      setBootError(null);
+      setLoadingLocation(true);
 
-    const bootstrap = async () => {
+      const appUser = await getCurrentAppUser();
+
+      setSession({
+        userId: appUser.userId,
+        name: appUser.name,
+      });
+
+      unsubscribeTokenRefreshRef.current?.();
+      unsubscribeTokenRefreshRef.current = undefined;
+
+      await registerSocketUser(appUser.userId, 'victim', appUser.name);
+      await restoreCommunityAvailability();
       try {
-        const appUser = await getCurrentAppUser();
+        await registerDeviceForPush(appUser);
+        unsubscribeTokenRefreshRef.current = subscribeToTokenRefresh(appUser);
+      } catch (pushError) {
+        console.warn('[FCM] Push setup skipped on victim app:', pushError);
+      }
 
-        setSession({
-          userId: appUser.userId,
-          name: appUser.name,
+      const granted = await requestForegroundLocationPermission();
+      if (!granted) {
+        throw new Error('Location permission was denied.');
+      }
+
+      const applyBootLocation = (position: any) => {
+        setCurrentLocation({
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
         });
-        await registerSocketUser(appUser.userId, 'victim', appUser.name);
-        await restoreCommunityAvailability();
-        try {
-          await registerDeviceForPush(appUser);
-          unsubscribeTokenRefresh = subscribeToTokenRefresh(appUser);
-        } catch (pushError) {
-          console.warn('[FCM] Push setup skipped on victim app:', pushError);
-        }
+        setLoadingLocation(false);
+      };
 
-        const granted = await requestForegroundLocationPermission();
-        if (!granted) {
-          throw new Error('Location permission was denied.');
-        }
+      const refineLocation = () => {
+        Geolocation.getCurrentPosition(
+          (position) => {
+            applyBootLocation(position);
+          },
+          (error) => {
+            console.warn('[LOCATION] High accuracy refinement failed:', error);
+          },
+          {
+            enableHighAccuracy: true,
+            timeout: 15000,
+            maximumAge: 5000,
+            forceLocationManager: true,
+            showLocationDialog: true,
+          },
+        );
+      };
 
-        const applyBootLocation = (position: any) => {
-          setCurrentLocation({
-            latitude: position.coords.latitude,
-            longitude: position.coords.longitude,
-          });
-          setLoadingLocation(false);
-        };
-
-        const refineLocation = () => {
+      Geolocation.getCurrentPosition(
+        (position) => {
+          applyBootLocation(position);
+          refineLocation();
+        },
+        () => {
           Geolocation.getCurrentPosition(
             (position) => {
               applyBootLocation(position);
             },
             (error) => {
-              console.warn('[LOCATION] High accuracy refinement failed:', error);
+              setBootError(error.message);
+              setLoadingLocation(false);
             },
             {
               enableHighAccuracy: true,
@@ -153,49 +184,43 @@ export function VictimSOSProvider({ children }: { children: ReactNode }) {
               showLocationDialog: true,
             },
           );
-        };
+        },
+        {
+          enableHighAccuracy: false,
+          timeout: 5000,
+          maximumAge: 60000,
+          forceLocationManager: true,
+          showLocationDialog: true,
+        },
+      );
+    } catch (error: any) {
+      const message = error?.message || 'Failed to initialize dashboard.';
 
-        Geolocation.getCurrentPosition(
-          (position) => {
-            applyBootLocation(position);
-            refineLocation();
-          },
-          () => {
-            Geolocation.getCurrentPosition(
-              (position) => {
-                applyBootLocation(position);
-              },
-              (error) => {
-                setBootError(error.message);
-                setLoadingLocation(false);
-              },
-              {
-                enableHighAccuracy: true,
-                timeout: 15000,
-                maximumAge: 5000,
-                forceLocationManager: true,
-                showLocationDialog: true,
-              },
-            );
-          },
-          {
-            enableHighAccuracy: false,
-            timeout: 5000,
-            maximumAge: 60000,
-            forceLocationManager: true,
-            showLocationDialog: true,
-          },
-        );
-      } catch (error: any) {
-        setBootError(error?.message || 'Failed to initialize dashboard.');
+      if (
+        options?.silentAuthFailure
+        && (
+          message.includes('Authenticated session is missing an ID token')
+          || message.includes('No token, authorization denied')
+          || message.includes('Token is not valid')
+        )
+      ) {
+        setSession(null);
+        setCurrentLocation(null);
+        setBootError(null);
         setLoadingLocation(false);
+        return;
       }
-    };
 
-    bootstrap();
+      setBootError(message);
+      setLoadingLocation(false);
+    }
+  };
+
+  useEffect(() => {
+    bootstrap({ silentAuthFailure: true });
 
     return () => {
-      unsubscribeTokenRefresh?.();
+      unsubscribeTokenRefreshRef.current?.();
     };
   }, []);
 
@@ -211,7 +236,7 @@ export function VictimSOSProvider({ children }: { children: ReactNode }) {
 
     emergencyDialPromptedRef.current = true;
     trigger911Call().catch(() => undefined);
-  }, [isEscalated]);
+  }, [isEscalated, trigger911Call]);
 
   const assignedHelpers = useMemo(
     () => helpers.filter((helper) => assignedHelperIds.includes(helper.userId)),
@@ -294,6 +319,9 @@ export function VictimSOSProvider({ children }: { children: ReactNode }) {
     triggerSOS,
     cancelSOS,
     trigger911Call,
+    refreshSession: async () => {
+      await bootstrap();
+    },
   }), [
     session,
     currentLocation,
@@ -315,6 +343,7 @@ export function VictimSOSProvider({ children }: { children: ReactNode }) {
     assignedEtaText,
     triggerSOS,
     cancelSOS,
+    trigger911Call,
   ]);
 
   return (

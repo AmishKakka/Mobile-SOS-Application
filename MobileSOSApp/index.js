@@ -3,6 +3,7 @@
  */
 
 import { AppRegistry } from 'react-native';
+import 'react-native-get-random-values';
 import 'react-native-gesture-handler';
 import { getApp } from '@react-native-firebase/app';
 import { getMessaging, setBackgroundMessageHandler } from '@react-native-firebase/messaging';

@@ -8,15 +8,15 @@ set -Eeuo pipefail
 DEVICE_NAMES=(
   "Phone Aksh"
   "Phone Amish"
-  "Phone Realme"
+  # "Phone Realme"
   "Phone Harsh"
 )
 
 PAIR_ADDRS=(
-  "192.168.0.70:43021"
-  "192.168.0.185:38495"
-  "192.168.0.61:42105"
-  "192.168.0.213:38721"
+  "192.168.0.70:37187"
+  "192.168.0.185:38497"
+  # "192.168.0.61:42105"
+  "192.168.0.213:33935"
 )
 
 DISCONNECT_ALL_FIRST="true"
