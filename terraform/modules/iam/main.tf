@@ -1,47 +1,55 @@
 data "aws_caller_identity" "current" {}
-data "aws_region" "current" {}
 
-
-resource "aws_iam_role" "ecs_execution" {
-  name = "sos-app-ecs-execution-role"
+resource "aws_iam_role" "ec2" {
+  name = "sos-app-ec2-role"
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
       Effect    = "Allow"
-      Principal = { Service = "ecs-tasks.amazonaws.com" }
+      Principal = { Service = "ec2.amazonaws.com" }
       Action    = "sts:AssumeRole"
     }]
   })
-  tags = { Name = "sos-app-ecs-execution-role" }
+  tags = { Name = "sos-app-ec2-role" }
 }
 
-resource "aws_iam_role_policy_attachment" "ecs_execution_basic" {
-  role       = aws_iam_role.ecs_execution.name
-  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+resource "aws_iam_instance_profile" "ec2" {
+  name = "sos-app-ec2-instance-profile"
+  role = aws_iam_role.ec2.name
 }
 
-resource "aws_iam_role_policy" "ecs_secrets_access" {
-  name = "sos-app-ecs-secrets-policy"
-  role = aws_iam_role.ecs_execution.id
+resource "aws_iam_role_policy_attachment" "ssm_core" {
+  role       = aws_iam_role.ec2.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+}
+
+resource "aws_iam_role_policy_attachment" "cloudwatch_agent" {
+  role       = aws_iam_role.ec2.name
+  policy_arn = "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
+}
+
+resource "aws_iam_role_policy" "ecr_pull" {
+  name = "sos-app-ec2-ecr-pull-policy"
+  role = aws_iam_role.ec2.id
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [{
-      Effect = "Allow"
-      Action = ["secretsmanager:GetSecretValue"]
-      Resource = "arn:aws:secretsmanager:${data.aws_region.current.id}:${data.aws_caller_identity.current.account_id}:secret:sos-app/*"
-    }]
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "ecr:GetAuthorizationToken"
+        ]
+        Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "ecr:BatchCheckLayerAvailability",
+          "ecr:BatchGetImage",
+          "ecr:GetDownloadUrlForLayer"
+        ]
+        Resource = "arn:aws:ecr:*:${data.aws_caller_identity.current.account_id}:repository/sos-backend"
+      }
+    ]
   })
-}
-
-resource "aws_iam_role" "ecs_task" {
-  name = "sos-app-ecs-task-role"
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Effect    = "Allow"
-      Principal = { Service = "ecs-tasks.amazonaws.com" }
-      Action    = "sts:AssumeRole"
-    }]
-  })
-  tags = { Name = "sos-app-ecs-task-role" }
 }

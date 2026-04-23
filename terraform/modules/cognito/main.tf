@@ -16,18 +16,18 @@ resource "aws_cognito_user_pool" "main" {
 
   # Tell AWS to expect the First Name from React Native
   schema {
-    attribute_data_type      = "String"
-    name                     = "given_name" 
-    required                 = true
-    mutable                  = true
+    attribute_data_type = "String"
+    name                = "given_name"
+    required            = true
+    mutable             = true
   }
 
   # Tell AWS to expect the Last Name from React Native
   schema {
-    attribute_data_type      = "String"
-    name                     = "family_name"
-    required                 = true
-    mutable                  = true
+    attribute_data_type = "String"
+    name                = "family_name"
+    required            = true
+    mutable             = true
   }
 
   tags = { Name = "sos-app-user-pool" }

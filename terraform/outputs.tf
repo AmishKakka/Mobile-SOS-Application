@@ -1,26 +1,21 @@
-output "alb_dns_name" {
+output "backend_origin" {
   description = "Preferred backend URL for frontend configuration"
-  value       = module.alb.alb_dns_name
+  value       = module.ec2.backend_origin
 }
 
-output "raw_alb_dns_name" {
-  description = "Raw AWS ALB DNS name"
-  value       = module.alb.raw_alb_dns_name
+output "elastic_ip" {
+  description = "Stable public IP for the EC2 instance. Whitelist this in MongoDB Atlas."
+  value       = module.ec2.elastic_ip
 }
 
-output "nat_gateway_ip" {
-  description = "Whitelist this IP in MongoDB Atlas Network Access"
-  value       = module.vpc.nat_gateway_ip
+output "ssh_command" {
+  description = "SSH command for the EC2 backend instance"
+  value       = module.ec2.ssh_command
 }
 
 output "ecr_repository_url" {
   description = "ECR URL for docker push and CI/CD pipeline"
-  value       = module.ecs.ecr_repository_url
-}
-
-output "redis_endpoint" {
-  description = "Redis host (ECS connects via REDIS_URL env var automatically)"
-  value       = module.elasticache.redis_endpoint
+  value       = module.ecr.ecr_repository_url
 }
 
 output "cognito_user_pool_id" {

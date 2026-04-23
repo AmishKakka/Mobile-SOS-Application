@@ -17,7 +17,11 @@ variable "fcm_server_key_secret_value" {
   sensitive = true
 }
 
-variable "container_cpu_architecture" {
-  type    = string
-  default = "X86_64"
+variable "developer_ip_cidr" {
+  type = string
+  description = "Your public IP/32 for SSH" 
+}
+
+variable "key_pair_name" {
+  type = string
 }
