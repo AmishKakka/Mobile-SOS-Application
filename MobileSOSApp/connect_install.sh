@@ -11,17 +11,17 @@ PACKAGE_NAME="com.mobilesosapp"
 # Use the CONNECT endpoints shown in Wireless debugging after pairing
 # Format: "IP:CONNECT_PORT"
 DEVICE_NAMES=(
-  "Phone Aksh"
-  "Phone Amish"
-  # "Phone Realme"
-  "Phone Harsh"
+  # "Phone Aksh"
+  # "Phone Amish"
+  "Phone Realme"
+  # "Phone Harsh"
 )
 
 CONNECT_ADDRS=(
-  "192.168.0.70:41341"
-  "192.168.0.185:40413"
-  # "192.168.0.61:42547"
-  "192.168.0.213:37115"
+  # "10.157.55.42:42109"
+  # "10.157.129.147:43299"
+  "192.168.0.61:38425"
+  # "192.168.0.213:39587"
 )
 
 UNINSTALL_FIRST="true"
@@ -54,8 +54,19 @@ check_arrays() {
   fi
 }
 
+validate_connect_addrs() {
+  for addr in "${CONNECT_ADDRS[@]}"; do
+    if [[ ! "$addr" =~ ^[^:]+:[0-9]+$ ]]; then
+      red "Invalid connect endpoint: $addr"
+      red "Expected format: IP:CONNECT_PORT"
+      exit 1
+    fi
+  done
+}
+
 require_cmd adb
 check_arrays
+validate_connect_addrs
 
 if [[ ! -f "$APK_PATH" ]]; then
   red "APK not found: $APK_PATH"

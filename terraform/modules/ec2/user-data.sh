@@ -45,7 +45,7 @@ FCM_SERVER_KEY_COMPACT="$(echo '${fcm_server_key_b64}' | base64 -d | tr -d '\n')
 
 cat > /home/ec2-user/backend.env << EOF
 MONGO_URI=${mongo_uri}
-FCM_SERVER_KEY=${FCM_SERVER_KEY_COMPACT}
+FCM_SERVER_KEY=$${FCM_SERVER_KEY_COMPACT}
 REDIS_HOST=redis
 NODE_ENV=production
 PORT=3000

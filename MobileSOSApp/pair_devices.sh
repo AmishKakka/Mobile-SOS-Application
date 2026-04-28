@@ -6,17 +6,17 @@ set -Eeuo pipefail
 # Format: "IP:PAIR_PORT"
 # =========================
 DEVICE_NAMES=(
-  "Phone Aksh"
-  "Phone Amish"
-  # "Phone Realme"
-  "Phone Harsh"
+  # "Phone Aksh"
+  # "Phone Amish"
+  "Phone Realme"
+  # "Phone Harsh"
 )
 
 PAIR_ADDRS=(
-  "192.168.0.70:37187"
-  "192.168.0.185:38497"
-  # "192.168.0.61:42105"
-  "192.168.0.213:33935"
+  # "10.157.55.42:42819"
+  # "192.168.0.185:37399"
+  "192.168.0.61:40501"
+  # "192.168.0.213:33449"
 )
 
 DISCONNECT_ALL_FIRST="true"
