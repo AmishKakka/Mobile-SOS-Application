@@ -4,7 +4,11 @@ import { API_BASE_URL } from '../../config/config';
 import { fetchAuthSession } from 'aws-amplify/auth';
 
 type Contact = { _id?: string; id?: string; name: string; phone: string; relation?: string };
-type NavigationLike = { navigate: (screen: string) => void; replace: (screen: string) => void };
+type NavigationLike = { 
+  navigate: (screen: string) => void; 
+  replace: (screen: string) => void; 
+  goBack: () => void; // 🚨 Added this!
+};
 type Props = { navigation: NavigationLike };
 
 const EmergencyContactsScreen: React.FC<Props> = ({ navigation }) => {
@@ -110,23 +114,38 @@ const EmergencyContactsScreen: React.FC<Props> = ({ navigation }) => {
   if (isLoading) {
     return (
       <SafeAreaView style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
-        <ActivityIndicator size="large" color="#DC2626" />
+        <ActivityIndicator size="large" color="#C82027" />
       </SafeAreaView>
     );
   }
 
-  // Requires at least 1 contact to proceed
   const canProceed = contacts.length > 0;
 
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scroll}>
         
-        <View style={styles.headerRow}>
-          <Text style={styles.header}>Emergency Contacts</Text>
-          <Text style={styles.counter}>{contacts.length}/5</Text>
+        {/* Top Nav & Progress */}
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+            <Text style={styles.backIcon}>←</Text>
+        </TouchableOpacity>
+
+        <View style={styles.progressContainer}>
+            <View style={[styles.progressBar, styles.progressActive]} />
+            <View style={[styles.progressBar, styles.progressActive]} />
+            <View style={styles.progressBar} />
         </View>
-        <Text style={styles.subtitle}>You must add at least one contact to notify during an SOS alert.</Text>
+
+        <View style={styles.headerRow}>
+            <View>
+                <Text style={styles.stepText}>STEP 2 OF 3: TRUSTED NETWORK</Text>
+                <Text style={styles.title}>Emergency Contacts</Text>
+            </View>
+            <View style={styles.counterBadge}>
+                <Text style={styles.counterText}>{contacts.length}/5</Text>
+            </View>
+        </View>
+        <Text style={styles.subtitle}>You must add at least one contact. We will notify them immediately during an SOS event.</Text>
 
         {/* List of Current Contacts */}
         {contacts.map((contact) => {
@@ -142,8 +161,8 @@ const EmergencyContactsScreen: React.FC<Props> = ({ navigation }) => {
                   <Text style={styles.contactDetails}>{contact.relation} • {contact.phone}</Text>
                 </View>
               </View>
-              <TouchableOpacity onPress={() => removeContact(uniqueKey as string)} style={styles.removeBtn}>
-                <Text style={styles.removeBtnText}>Remove</Text>
+              <TouchableOpacity onPress={() => removeContact(uniqueKey as string)}>
+                <Text style={styles.removeBtnText}>✕</Text>
               </TouchableOpacity>
             </View>
           );
@@ -154,26 +173,18 @@ const EmergencyContactsScreen: React.FC<Props> = ({ navigation }) => {
           <Text style={styles.errorText}>{errorMessage}</Text>
         )}
 
-        <View style={styles.formActions}>
-          <TouchableOpacity
-            style={styles.cancelFormBtn}
-            onPress={() => {
-              setShowAddForm(false);
-              setErrorMessage(""); // Clear error if they cancel
-            }}
-          >
-            <Text style={styles.cancelFormText}>Cancel</Text>
-          </TouchableOpacity>
-        </View>
-
         {/* Add Contact Form */}
         {contacts.length < 5 ? (
           showAddForm ? (
             <View style={styles.addFormContainer}>
               <Text style={styles.formTitle}>Add New Contact</Text>
               
-              <TextInput style={styles.input} placeholder="Full Name *" placeholderTextColor="#9ca3af" value={newContact.name} onChangeText={(t) => setNewContact({...newContact, name: t})} />
-              <TextInput style={styles.input} placeholder="Phone Number *" placeholderTextColor="#9ca3af" keyboardType="phone-pad" value={newContact.phone} onChangeText={handlePhoneChange} maxLength={14} />
+              <View style={styles.inputContainer}>
+                 <TextInput style={styles.input} placeholder="Full Name *" placeholderTextColor="#c2b9b4" value={newContact.name} onChangeText={(t) => setNewContact({...newContact, name: t})} />
+              </View>
+              <View style={styles.inputContainer}>
+                 <TextInput style={styles.input} placeholder="Phone Number *" placeholderTextColor="#c2b9b4" keyboardType="phone-pad" value={newContact.phone} onChangeText={handlePhoneChange} maxLength={14} />
+              </View>
               
               {/* Custom Relationship Selector */}
               <Text style={styles.relationLabel}>Relationship *</Text>
@@ -193,11 +204,11 @@ const EmergencyContactsScreen: React.FC<Props> = ({ navigation }) => {
               </View>
               
               <View style={styles.formActions}>
-                <TouchableOpacity style={styles.cancelFormBtn} onPress={() => setShowAddForm(false)}>
+                <TouchableOpacity style={styles.cancelFormBtn} onPress={() => { setShowAddForm(false); setErrorMessage(""); }}>
                   <Text style={styles.cancelFormText}>Cancel</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.submitFormBtn} onPress={addContact}>
-                  <Text style={styles.submitFormText}>Add Contact</Text>
+                  <Text style={styles.submitFormText}>Add</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -212,13 +223,15 @@ const EmergencyContactsScreen: React.FC<Props> = ({ navigation }) => {
           </View>
         )}
 
-        <TouchableOpacity 
-          style={[styles.saveButton, !canProceed && styles.saveButtonDisabled]} 
-          onPress={handleSave}
-          disabled={!canProceed}
-        >
-          <Text style={styles.saveButtonText}>Next: Medical Info</Text>
-        </TouchableOpacity>
+        <View style={styles.buttonContainer}>
+            <TouchableOpacity 
+            style={[styles.saveButton, !canProceed && styles.saveButtonDisabled]} 
+            onPress={handleSave}
+            disabled={!canProceed}
+            >
+            <Text style={styles.saveButtonText}>Next: Medical Info →</Text>
+            </TouchableOpacity>
+        </View>
 
       </ScrollView>
     </SafeAreaView>
@@ -226,59 +239,63 @@ const EmergencyContactsScreen: React.FC<Props> = ({ navigation }) => {
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f9fafb' },
+  container: { flex: 1, backgroundColor: '#FAF9F6' },
   scroll: { padding: 24 },
   
-  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
-  header: { fontSize: 24, fontWeight: 'bold', color: '#111827' },
-  counter: { fontSize: 16, fontWeight: '700', color: '#d32f2f', backgroundColor: '#fef2f2', paddingHorizontal: 12, paddingVertical: 4, borderRadius: 12, overflow: 'hidden' },
-  subtitle: { fontSize: 14, color: '#6b7280', marginBottom: 24, lineHeight: 20 },
+  backButton: { marginBottom: 20, marginTop: 10 },
+  backIcon: { fontSize: 24, color: "#1A1A1A" },
 
-  contactCard: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#ffffff', padding: 16, borderRadius: 12, marginBottom: 12, borderWidth: 1, borderColor: '#e5e7eb' },
+  progressContainer: { flexDirection: 'row', gap: 8, marginBottom: 24 },
+  progressBar: { flex: 1, height: 4, backgroundColor: '#EBEBE6', borderRadius: 2 },
+  progressActive: { backgroundColor: '#C82027' },
+
+  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 },
+  stepText: { fontSize: 12, fontWeight: "700", color: "#1E6594", marginBottom: 8, letterSpacing: 0.5 },
+  title: { fontSize: 32, fontWeight: "800", color: "#1A1A1A" },
+  
+  counterBadge: { backgroundColor: '#F2F2EC', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, marginTop: 4 },
+  counterText: { fontSize: 14, fontWeight: '700', color: '#6B625B' },
+  
+  subtitle: { fontSize: 16, color: "#6B625B", lineHeight: 22, marginBottom: 24 },
+
+  contactCard: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#FFFFFF', padding: 16, borderRadius: 16, marginBottom: 12, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 2 },
   contactInfo: { flexDirection: 'row', alignItems: 'center' },
-  avatarCircle: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#f3f4f6', justifyContent: 'center', alignItems: 'center', marginRight: 12 },
-  avatarText: { fontSize: 18, fontWeight: 'bold', color: '#4b5563' },
-  contactName: { fontSize: 16, fontWeight: '700', color: '#111827', marginBottom: 2 },
-  contactDetails: { fontSize: 13, color: '#6b7280' },
-  removeBtn: { padding: 8 },
-  removeBtnText: { color: '#d32f2f', fontSize: 14, fontWeight: '600' },
+  avatarCircle: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#F4F4F0', justifyContent: 'center', alignItems: 'center', marginRight: 14 },
+  avatarText: { fontSize: 18, fontWeight: 'bold', color: '#8b7a73' },
+  contactName: { fontSize: 16, fontWeight: '700', color: '#1A1A1A', marginBottom: 2 },
+  contactDetails: { fontSize: 14, color: '#6B625B' },
+  removeBtnText: { color: '#C82027', fontSize: 18, fontWeight: '800', padding: 8 },
 
-  addContactBtn: { borderStyle: 'dashed', borderWidth: 1.5, borderColor: '#d1d5db', borderRadius: 12, padding: 16, alignItems: 'center', marginTop: 8, backgroundColor: '#ffffff' },
-  addContactText: { color: '#4b5563', fontSize: 15, fontWeight: '600' },
+  addContactBtn: { backgroundColor: '#F4F4F0', borderRadius: 14, padding: 18, alignItems: 'center', marginTop: 8 },
+  addContactText: { color: '#1A1A1A', fontSize: 16, fontWeight: '600' },
   
   limitReachedBox: { padding: 16, alignItems: 'center', marginTop: 8 },
-  limitReachedText: { color: '#9ca3af', fontSize: 14, fontStyle: 'italic' },
+  limitReachedText: { color: '#8b7a73', fontSize: 14, fontStyle: 'italic' },
 
-  addFormContainer: { backgroundColor: '#ffffff', padding: 16, borderRadius: 12, marginTop: 8, borderWidth: 1, borderColor: '#e5e7eb' },
-  formTitle: { fontSize: 16, fontWeight: '700', color: '#111827', marginBottom: 12 },
-  input: { borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 8, padding: 12, fontSize: 15, color: '#111827', backgroundColor: '#f9fafb', marginBottom: 12 },
+  addFormContainer: { backgroundColor: '#FFFFFF', padding: 20, borderRadius: 16, marginTop: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 2 },
+  formTitle: { fontSize: 18, fontWeight: '700', color: '#1A1A1A', marginBottom: 16 },
+  inputContainer: { backgroundColor: '#F4F4F0', borderRadius: 14, paddingHorizontal: 16, height: 56, justifyContent: 'center', marginBottom: 12 },
+  input: { fontSize: 16, color: '#1A1A1A' },
   
-  // Custom Relation Selector Styles
-  relationLabel: { fontSize: 14, fontWeight: '600', color: '#374151', marginBottom: 8 },
-  relationContainer: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 16 },
-  relationOption: { flex: 1, paddingVertical: 12, borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 8, alignItems: 'center', marginHorizontal: 4, backgroundColor: '#f9fafb' },
-  relationOptionActive: { borderColor: '#111827', backgroundColor: '#e5e7eb' },
-  relationText: { fontSize: 14, fontWeight: '600', color: '#6b7280' },
-  relationTextActive: { color: '#111827' },
+  relationLabel: { fontSize: 14, fontWeight: '600', color: '#1A1A1A', marginBottom: 8, marginTop: 4 },
+  relationContainer: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 24 },
+  relationOption: { flex: 1, paddingVertical: 14, borderRadius: 12, alignItems: 'center', marginHorizontal: 4, backgroundColor: '#F4F4F0' },
+  relationOptionActive: { backgroundColor: '#1A1A1A' },
+  relationText: { fontSize: 15, fontWeight: '600', color: '#6B625B' },
+  relationTextActive: { color: '#FFFFFF' },
 
-  formActions: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 8 },
-  cancelFormBtn: { paddingVertical: 10, paddingHorizontal: 16, marginRight: 8 },
-  cancelFormText: { color: '#6b7280', fontSize: 15, fontWeight: '600' },
-  submitFormBtn: { backgroundColor: '#111827', paddingVertical: 10, paddingHorizontal: 16, borderRadius: 8 },
-  submitFormText: { color: '#ffffff', fontSize: 15, fontWeight: '600' },
+  formActions: { flexDirection: 'row', justifyContent: 'flex-end' },
+  cancelFormBtn: { paddingVertical: 12, paddingHorizontal: 16, marginRight: 8 },
+  cancelFormText: { color: '#6B625B', fontSize: 15, fontWeight: '600' },
+  submitFormBtn: { backgroundColor: '#C82027', paddingVertical: 12, paddingHorizontal: 24, borderRadius: 12 },
+  submitFormText: { color: '#FFFFFF', fontSize: 15, fontWeight: '700' },
 
-  saveButton: { backgroundColor: '#d32f2f', paddingVertical: 18, borderRadius: 12, alignItems: 'center', marginTop: 32, marginBottom: 40 },
-  saveButtonDisabled: { backgroundColor: "#fca5a5" },
-  saveButtonText: { color: '#ffffff', fontSize: 16, fontWeight: 'bold' },
+  buttonContainer: { marginTop: 32, marginBottom: 40 },
+  saveButton: { backgroundColor: "#C82027", borderRadius: 14, paddingVertical: 18, alignItems: "center" },
+  saveButtonDisabled: { opacity: 0.5 },
+  saveButtonText: { color: "white", fontSize: 17, fontWeight: "700" },
 
-  errorText: { 
-    color: '#DC2626', 
-    fontSize: 13, 
-    fontWeight: '600', 
-    marginBottom: 8,
-    marginTop: 4
-  },
-
+  errorText: { color: '#C82027', fontSize: 14, fontWeight: '600', marginBottom: 12, marginTop: 8, marginLeft: 4 },
 });
 
 export default EmergencyContactsScreen;
