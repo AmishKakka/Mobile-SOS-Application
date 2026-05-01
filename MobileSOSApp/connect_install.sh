@@ -5,7 +5,7 @@ set -Eeuo pipefail
 # Hardcode values here
 # =========================
 
-APK_PATH="/Users/omchauhan/Desktop/Mobile-SOS-Application/MobileSOSApp/android/app/build/outputs/apk/release/app-release.apk"
+APK_PATH="D:\SOS\MobileSOSApp\android\app\build\outputs\apk\release\app-release.apk"
 PACKAGE_NAME="com.mobilesosapp"
 
 # Use the CONNECT endpoints shown in Wireless debugging after pairing

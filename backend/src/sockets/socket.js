@@ -53,6 +53,27 @@ function isValidLocation(location) {
   return location && Number.isFinite(Number(location.lat)) && Number.isFinite(Number(location.lng));
 }
 
+function haversineMeters(a, b) {
+  if (!isValidLocation(a) || !isValidLocation(b)) {
+    return undefined;
+  }
+
+  const toRad = (deg) => (deg * Math.PI) / 180;
+  const lat1 = Number(a.lat);
+  const lng1 = Number(a.lng);
+  const lat2 = Number(b.lat);
+  const lng2 = Number(b.lng);
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const sinLat = Math.sin(dLat / 2);
+  const sinLng = Math.sin(dLng / 2);
+  const h =
+    sinLat * sinLat +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * sinLng * sinLng;
+
+  return 6371000 * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+}
+
 async function patchExistingUser(userId, update) {
   if (!userId || !update || Object.keys(update).length === 0) {
     return;
@@ -96,6 +117,140 @@ function requireMatchingUser(socket, candidateUserId, fieldName) {
   }
 
   return socketUserId;
+}
+
+async function buildActiveSOSSnapshot(state, redisClient) {
+  const helperById = new Map();
+
+  for (const helper of state.currentBatchHelpers || []) {
+    const userId = String(helper.userId || '').trim();
+    if (!userId) {
+      continue;
+    }
+
+    helperById.set(userId, {
+      userId,
+      name: helper.name || state.helperNamesById?.[userId] || userId,
+      lat: Number(helper.lat),
+      long: Number(helper.long),
+      distance: Number(helper.distance),
+    });
+  }
+
+  for (const helperId of state.assignedHelperIds || []) {
+    const safeHelperId = String(helperId || '').trim();
+    if (!safeHelperId) {
+      continue;
+    }
+
+    const [lastLocation, helperUser] = await Promise.all([
+      redisClient.hgetall(`last-location:${safeHelperId}`),
+      User.findById(safeHelperId).select('name').lean().catch(() => null),
+    ]);
+
+    const helperLocation = {
+      lat: Number(lastLocation?.lat),
+      lng: Number(lastLocation?.long),
+    };
+
+    if (isValidLocation(helperLocation)) {
+      helperById.set(safeHelperId, {
+        userId: safeHelperId,
+        name:
+          state.helperNamesById?.[safeHelperId] ||
+          helperUser?.name ||
+          safeHelperId,
+        lat: helperLocation.lat,
+        long: helperLocation.lng,
+        distance: haversineMeters(state.currentVictimLocation, helperLocation),
+      });
+      continue;
+    }
+
+    const existingHelper = helperById.get(safeHelperId);
+    if (existingHelper) {
+      helperById.set(safeHelperId, {
+        ...existingHelper,
+        name:
+          state.helperNamesById?.[safeHelperId] ||
+          helperUser?.name ||
+          existingHelper.name,
+      });
+    }
+  }
+
+  return {
+    active: true,
+    incidentId: state.incidentId,
+    roomId: state.roomId,
+    victimLocation: state.currentVictimLocation,
+    radiusMeters: state.currentSearchRadiusMeters || 250,
+    activeSeconds: state.startedAt
+      ? Math.max(0, Math.floor((Date.now() - state.startedAt) / 1000))
+      : 0,
+    assignedHelperIds: state.assignedHelperIds || [],
+    helpers: Array.from(helperById.values()).filter(
+      (helper) =>
+        Number.isFinite(helper.lat) && Number.isFinite(helper.long),
+    ),
+  };
+}
+
+async function emitActiveSOSSnapshot(io, socket, redisClient, state, reason = 'restored') {
+  const snapshot = await buildActiveSOSSnapshot(state, redisClient);
+  socket.emit('active_sos_state', {
+    ...snapshot,
+    reason,
+  });
+  io.to(`user:${state.victimUserId}`).emit('active_sos_state', {
+    ...snapshot,
+    reason,
+  });
+}
+
+function findActiveResponseForHelper(helperId) {
+  const safeHelperId = String(helperId || '').trim();
+  if (!safeHelperId) {
+    return null;
+  }
+
+  for (const state of activeEmergencyRooms.values()) {
+    if ((state.assignedHelperIds || []).includes(safeHelperId)) {
+      return state;
+    }
+  }
+
+  return null;
+}
+
+async function buildActiveHelperResponseSnapshot(state, helperId) {
+  const victim = await User.findById(state.victimUserId)
+    .select('name')
+    .lean()
+    .catch(() => null);
+
+  return {
+    active: true,
+    incidentId: state.incidentId,
+    roomId: state.roomId,
+    helperId,
+    victimUserId: state.victimUserId,
+    victimName: victim?.name || state.victimUserId,
+    victimLocation: state.currentVictimLocation,
+    incidentType: 'Emergency',
+    activeSeconds: state.startedAt
+      ? Math.max(0, Math.floor((Date.now() - state.startedAt) / 1000))
+      : 0,
+  };
+}
+
+async function emitActiveHelperResponseSnapshot(socket, state, helperId, reason = 'restored') {
+  const snapshot = await buildActiveHelperResponseSnapshot(state, helperId);
+  socket.emit('active_helper_response', {
+    ...snapshot,
+    reason,
+  });
+  return snapshot;
 }
 
 module.exports = function initializeSocket(server, redisClient, pubClient, subClient) {
@@ -148,6 +303,30 @@ module.exports = function initializeSocket(server, redisClient, pubClient, subCl
         });
 
         socket.emit('registered', { userId, role });
+
+        if (role === 'victim') {
+          const activeRoomId = `incident_${userId}`;
+          const activeState = activeEmergencyRooms.get(activeRoomId);
+          if (activeState) {
+            activeState.victimSocketId = socket.id;
+            socket.join(activeRoomId);
+            await emitActiveSOSSnapshot(io, socket, redisClient, activeState, 'registered');
+          }
+        }
+
+        if (role === 'helper') {
+          const activeHelperState = findActiveResponseForHelper(userId);
+          if (activeHelperState) {
+            socket.data.activeRoomId = activeHelperState.roomId;
+            socket.join(activeHelperState.roomId);
+            await emitActiveHelperResponseSnapshot(
+              socket,
+              activeHelperState,
+              userId,
+              'registered',
+            );
+          }
+        }
       } catch (error) {
         console.error('[SOCKET] Failed to verify register_user token:', error.message);
         socket.emit('error_msg', {
@@ -193,6 +372,66 @@ module.exports = function initializeSocket(server, redisClient, pubClient, subCl
       await upsertLiveLocation(redisClient, userId, { lat, lng });
     });
 
+    socket.on('victim_restore_active_sos', async (payload = {}, ack = () => { }) => {
+      const userId = requireMatchingUser(socket, payload.userId, 'victim_restore_active_sos userId');
+      if (!userId) {
+        ack({ ok: false, active: false, message: 'Socket user is not registered.' });
+        return;
+      }
+
+      const roomId = `incident_${userId}`;
+      const state = activeEmergencyRooms.get(roomId);
+      if (!state) {
+        ack({ ok: true, active: false });
+        return;
+      }
+
+      state.victimSocketId = socket.id;
+      socket.join(roomId);
+
+      try {
+        const snapshot = await buildActiveSOSSnapshot(state, redisClient);
+        socket.emit('active_sos_state', {
+          ...snapshot,
+          reason: 'manual_restore',
+        });
+        ack({ ok: true, ...snapshot });
+      } catch (error) {
+        console.error('[SOS] Failed to restore active SOS:', error.message);
+        ack({ ok: false, active: false, message: 'Failed to restore active SOS.' });
+      }
+    });
+
+    socket.on('helper_restore_active_response', async (payload = {}, ack = () => { }) => {
+      const helperId = requireMatchingUser(socket, payload.helperId, 'helper_restore_active_response helperId');
+      if (!helperId) {
+        ack({ ok: false, active: false, message: 'Socket user is not registered.' });
+        return;
+      }
+
+      const state = findActiveResponseForHelper(helperId);
+      if (!state) {
+        ack({ ok: true, active: false });
+        return;
+      }
+
+      socket.data.activeRoomId = state.roomId;
+      socket.join(state.roomId);
+
+      try {
+        const snapshot = await emitActiveHelperResponseSnapshot(
+          socket,
+          state,
+          helperId,
+          'manual_restore',
+        );
+        ack({ ok: true, ...snapshot });
+      } catch (error) {
+        console.error('[SOS] Failed to restore active helper response:', error.message);
+        ack({ ok: false, active: false, message: 'Failed to restore active response.' });
+      }
+    });
+
     socket.on('sos_trigger', async (payload = {}) => {
       const userId = requireMatchingUser(socket, payload.userId, 'sos_trigger userId');
       const location = payload.location;
@@ -210,11 +449,27 @@ module.exports = function initializeSocket(server, redisClient, pubClient, subCl
           lat: Number(location.lat),
           lng: Number(location.lng),
         };
-        const incidentId = `${roomId}_${Date.now()}_${randomUUID().slice(0, 8)}`;
 
         if (activeEmergencyRooms.has(roomId)) {
-          await cleanupRoom(roomId, redisClient, { clearRedisOnly: true });
+          const existingState = activeEmergencyRooms.get(roomId);
+          existingState.victimSocketId = socket.id;
+          existingState.currentVictimLocation = victimLocation;
+          socket.join(roomId);
+
+          await patchExistingUser(userId, {
+            lastKnownLocation: {
+              lat: victimLocation.lat,
+              lng: victimLocation.lng,
+              updatedAt: new Date(),
+            },
+          });
+
+          io.to(roomId).emit('update_victim_pin', victimLocation);
+          await emitActiveSOSSnapshot(io, socket, redisClient, existingState, 'already_active');
+          return;
         }
+
+        const incidentId = `${roomId}_${Date.now()}_${randomUUID().slice(0, 8)}`;
 
         socket.join(roomId);
         activeEmergencyRooms.set(roomId, {
@@ -222,11 +477,15 @@ module.exports = function initializeSocket(server, redisClient, pubClient, subCl
           roomId,
           victimUserId: userId,
           victimSocketId: socket.id,
+          startedAt: Date.now(),
           currentVictimLocation: victimLocation,
           currentSearchRing: -1,
           currentSosTimeoutId: null,
           assignedHelperIds: [],
           currentBatchHelperIds: [],
+          currentBatchHelpers: [],
+          currentSearchRadiusMeters: 250,
+          helperNamesById: {},
           redisNotifiedKey,
         });
 
@@ -278,10 +537,11 @@ module.exports = function initializeSocket(server, redisClient, pubClient, subCl
           roomId,
           finalStatus: 'CANCELLED',
           reason: 'victim_cancelled',
+          location: state.currentVictimLocation,
         }),
       );
 
-      await cleanupRoom(roomId, redisClient);
+      await cleanupRoom(roomId, redisClient, { io });
     });
 
     socket.on('helper_accept', async ({ helperId, helperName, roomId } = {}, ack = () => { }) => {
@@ -299,6 +559,8 @@ module.exports = function initializeSocket(server, redisClient, pubClient, subCl
       }
 
       if (state.assignedHelperIds.includes(authenticatedHelperId)) {
+        socket.join(roomId);
+        socket.data.activeRoomId = roomId;
         ack({
           ok: true,
           roomId,
@@ -322,6 +584,10 @@ module.exports = function initializeSocket(server, redisClient, pubClient, subCl
       // }
 
       state.assignedHelperIds.push(authenticatedHelperId);
+      state.helperNamesById = {
+        ...(state.helperNamesById || {}),
+        [authenticatedHelperId]: helperName || authenticatedHelperId,
+      };
 
       socket.join(roomId);
       socket.data.activeRoomId = roomId;
@@ -408,6 +674,7 @@ module.exports = function initializeSocket(server, redisClient, pubClient, subCl
 
       await upsertLiveLocation(redisClient, authenticatedHelperId, nextLocation);
       io.to(`user:${state.victimUserId}`).emit('update_helper_pin', {
+        roomId,
         helperId: authenticatedHelperId,
         location: nextLocation,
       });
@@ -479,7 +746,7 @@ module.exports = function initializeSocket(server, redisClient, pubClient, subCl
             incidentId: state.incidentId,
             roomId,
             helperId: authenticatedHelperId,
-            reason: notes || 'cannot_handle',
+            reason: 'cannot_handle',
           }),
         );
 
@@ -504,10 +771,11 @@ module.exports = function initializeSocket(server, redisClient, pubClient, subCl
           finalStatus: 'COMPLETED',
           reason: outcome || 'helped',
           notes: notes || '',
+          location: state.currentVictimLocation,
         }),
       );
 
-      await cleanupRoom(roomId, redisClient);
+      await cleanupRoom(roomId, redisClient, { io });
     });
 
     socket.on('disconnect', async () => {
@@ -520,19 +788,7 @@ module.exports = function initializeSocket(server, redisClient, pubClient, subCl
 
       for (const [roomId, state] of activeEmergencyRooms.entries()) {
         if (state.victimSocketId === socket.id) {
-          io.to(roomId).emit('cancel_alert', {
-            roomId,
-            message: 'Victim lost connection. SOS closed.',
-          });
-          runTelemetry('logIncidentCancelled', () =>
-            incidentTelemetryStore.logIncidentClosed({
-              incidentId: state.incidentId,
-              roomId,
-              finalStatus: 'CANCELLED',
-              reason: 'victim_disconnected',
-            }),
-          );
-          await cleanupRoom(roomId, redisClient);
+          state.victimSocketId = null;
           return;
         }
       }
@@ -540,25 +796,7 @@ module.exports = function initializeSocket(server, redisClient, pubClient, subCl
       if (activeRoomId && activeEmergencyRooms.has(activeRoomId)) {
         const state = activeEmergencyRooms.get(activeRoomId);
         if (state && state.assignedHelperIds.includes(userId)) {
-          state.assignedHelperIds = state.assignedHelperIds.filter((id) => id !== userId);
-          io.to(`user:${state.victimUserId}`).emit('helper_response_cancelled', {
-            roomId: activeRoomId,
-            helperId: userId,
-            acceptedHelperIds: state.assignedHelperIds,
-            reason: 'Assigned helper disconnected.',
-          });
-          await redisClient.sadd(state.redisNotifiedKey, String(userId));
-          runTelemetry('logHelperCancelled', () =>
-            incidentTelemetryStore.logHelperCancelled({
-              incidentId: state.incidentId,
-              roomId: activeRoomId,
-              helperId: userId,
-              reason: 'helper_disconnected',
-            }),
-          );
-          if (state.assignedHelperIds.length === 0 && !state.currentSosTimeoutId) {
-            await startAutomatedDispatchLoop(io, redisClient, activeRoomId);
-          }
+          return;
         }
       }
     });
@@ -619,6 +857,7 @@ async function upsertLiveLocation(redisClient, userId, location) {
 function emitSearchProgress(io, state, searchMetadata) {
   const ring = Number(searchMetadata?.searchedRing) || 0;
   const radiusMeters = Number(searchMetadata?.radiusMeters) || 250;
+  state.currentSearchRadiusMeters = radiusMeters;
   io.to(`user:${state.victimUserId}`).emit('dispatch_search_progress', {
     roomId: state.roomId,
     ring,
@@ -698,6 +937,7 @@ async function startAutomatedDispatchLoop(io, redisClient, roomId) {
   const batch = helpers.slice(0, NOTIFY_BATCH_SIZE);
   const helperIds = batch.map((helper) => helper.userId);
   state.currentBatchHelperIds = helperIds;
+  state.currentBatchHelpers = batch;
 
   runTelemetry('logHelpersAssigned', () =>
     incidentTelemetryStore.logHelpersAssigned({
@@ -766,6 +1006,7 @@ async function cleanupRoom(roomId, redisClient, options = {}) {
     }
   }
 
+  options.io?.in(roomId).socketsLeave(roomId);
   incidentTelemetryStore.clearIncident(state.incidentId);
   activeEmergencyRooms.delete(roomId);
 }

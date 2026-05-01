@@ -11,8 +11,7 @@ import { VictimSOSProvider } from './src/features/sos/VictimSOSContext';
 
 import { Amplify } from 'aws-amplify';
 import { COGNITO_USER_POOL_ID, COGNITO_CLIENT_ID } from '@env';
-import { getCurrentUser } from 'aws-amplify/auth';
-import { getCurrentIdToken } from './src/services/appUser';
+import { getCurrentAppUser } from './src/services/appUser';
 
 const ONBOARDING_SEEN_KEY = '@safeguard_has_seen_get_started';
 
@@ -44,14 +43,8 @@ function App() {
           return;
         }
 
-        await getCurrentUser();
-        const idToken = await getCurrentIdToken();
-
-        if (!idToken) {
-          throw new Error('Authenticated session is missing an ID token.');
-        }
-
-        setInitialRoute('MainDashboard');
+        const appUser = await getCurrentAppUser();
+        setInitialRoute(appUser.setupRoute);
       } catch {
         setInitialRoute('AuthScreen');
       } finally {

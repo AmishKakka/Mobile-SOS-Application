@@ -257,14 +257,24 @@ class IncidentTelemetryStore {
     helperId = null,
     reason = null,
     notes = null,
+    location = null,
     ts = new Date(),
   }) {
     const eventType = finalStatus === 'COMPLETED' ? 'INCIDENT_COMPLETED' : 'INCIDENT_CANCELLED';
+    let safeLocation = null;
+
+    try {
+      safeLocation = location ? normalizeLocation(location) : null;
+    } catch {
+      safeLocation = null;
+    }
+
     await this._addEvent({
       incidentId,
       helperId,
       eventType,
       ts,
+      location: safeLocation,
       details: { roomId, finalStatus, reason, notes },
       severity: finalStatus === 'COMPLETED' ? 'INFO' : 'MEDIUM',
     });
@@ -673,6 +683,7 @@ const incidentTelemetryStore = new IncidentTelemetryStore();
 
 module.exports = {
   IncidentTelemetryStore,
+  IncidentEvent,
   incidentTelemetryStore,
   RULES,
   TRACK_TTL_SECONDS,

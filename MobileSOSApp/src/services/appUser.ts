@@ -1,4 +1,8 @@
-import { fetchUserAttributes, getCurrentUser, fetchAuthSession } from 'aws-amplify/auth';
+import {
+  fetchUserAttributes,
+  getCurrentUser,
+  fetchAuthSession,
+} from 'aws-amplify/auth';
 import { API_BASE_URL } from '../config/config';
 
 export type AppUser = {
@@ -10,7 +14,16 @@ export type AppUser = {
   email: string;
   role: string;
   isHelperAvailable: boolean;
+  setupRoute: AppSetupRoute;
+  isProfileSetupComplete: boolean;
 };
+
+export type AppSetupRoute =
+  | 'CompleteProfile'
+  | 'AddEmergencyContacts'
+  | 'CompleteMedicalProfile'
+  | 'SetUpPin'
+  | 'MainDashboard';
 
 async function getAuthHeaders() {
   const token = await getCurrentIdToken();
@@ -43,13 +56,52 @@ async function fetchWithAuth(
   } catch (error: any) {
     const message = error?.message || 'Unknown network error';
     throw new Error(
-      `Network request failed for ${url}. ${message}. Check BACKEND_ORIGIN, ALB health, and Android cleartext HTTP settings.`
+      `Network request failed for ${url}. ${message}. Check BACKEND_ORIGIN, ALB health, and Android cleartext HTTP settings.`,
     );
   }
 }
 
 function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function hasValidProfilePhone(phone: unknown) {
+  return typeof phone === 'string' && phone.replace(/\D/g, '').length === 10;
+}
+
+function hasEmergencyContact(contacts: unknown) {
+  return Array.isArray(contacts) && contacts.length > 0;
+}
+
+function getSetupRoute(raw: any): AppSetupRoute {
+  const setup = raw?.profileSetup || {};
+  const personalDetailsCompleted =
+    Boolean(setup.personalDetailsCompleted) || hasValidProfilePhone(raw?.phone);
+  const emergencyContactsCompleted =
+    Boolean(setup.emergencyContactsCompleted) ||
+    hasEmergencyContact(raw?.emergencyContacts);
+  const medicalProfileCompleted = Boolean(
+    setup.medicalProfileCompleted || setup.completedAt,
+  );
+  const pinSetupCompleted = Boolean(setup.pinSetupCompleted);
+
+  if (!personalDetailsCompleted) {
+    return 'CompleteProfile';
+  }
+
+  if (!emergencyContactsCompleted) {
+    return 'AddEmergencyContacts';
+  }
+
+  if (!medicalProfileCompleted) {
+    return 'CompleteMedicalProfile';
+  }
+
+  if (!pinSetupCompleted) {
+    return 'SetUpPin';
+  }
+
+  return 'MainDashboard';
 }
 
 export async function getCurrentIdToken(options?: {
@@ -79,18 +131,22 @@ export async function getCurrentIdToken(options?: {
 }
 
 function normalizeUser(raw: any): AppUser {
+  const setupRoute = getSetupRoute(raw);
+
   return {
     userId: String(raw?._id || ''),
     cognitoId: String(raw?.cognitoId || ''),
     firstName: String(raw?.firstName || ''),
     lastName: String(raw?.lastName || ''),
     name:
-      String(raw?.name || '').trim()
-      || [raw?.firstName, raw?.lastName].filter(Boolean).join(' ').trim()
-      || String(raw?.email || ''),
+      String(raw?.name || '').trim() ||
+      [raw?.firstName, raw?.lastName].filter(Boolean).join(' ').trim() ||
+      String(raw?.email || ''),
     email: String(raw?.email || ''),
     role: String(raw?.role || 'victim'),
     isHelperAvailable: Boolean(raw?.isHelperAvailable),
+    setupRoute,
+    isProfileSetupComplete: setupRoute === 'MainDashboard',
   };
 }
 
@@ -99,19 +155,25 @@ export async function syncAuthenticatedUser() {
   const currentUser = await getCurrentUser();
   const attributes = await fetchUserAttributes();
 
-  const response = await fetchWithAuth('/users/sync', {
-    method: 'POST',
-    body: JSON.stringify({
-      cognitoId: currentUser.userId,
-      email: attributes.email,
-      firstName: attributes.given_name,
-      lastName: attributes.family_name,
-    }),
-  }, headers);
+  const response = await fetchWithAuth(
+    '/users/sync',
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        cognitoId: currentUser.userId,
+        email: attributes.email,
+        firstName: attributes.given_name,
+        lastName: attributes.family_name,
+      }),
+    },
+    headers,
+  );
 
   if (!response.ok) {
     const text = await response.text();
-    throw new Error(`Failed to sync authenticated user: ${response.status} ${text}`);
+    throw new Error(
+      `Failed to sync authenticated user: ${response.status} ${text}`,
+    );
   }
 
   const payload = await response.json();
@@ -121,15 +183,23 @@ export async function syncAuthenticatedUser() {
 export async function getCurrentAppUser(): Promise<AppUser> {
   const headers = await getAuthHeaders();
 
-  let response = await fetchWithAuth('/users/profile', {
-    method: 'GET',
-  }, headers);
+  let response = await fetchWithAuth(
+    '/users/profile',
+    {
+      method: 'GET',
+    },
+    headers,
+  );
 
   if (response.status === 404) {
     await syncAuthenticatedUser();
-    response = await fetchWithAuth('/users/profile', {
-      method: 'GET',
-    }, headers);
+    response = await fetchWithAuth(
+      '/users/profile',
+      {
+        method: 'GET',
+      },
+      headers,
+    );
   }
 
   if (!response.ok) {
@@ -149,17 +219,23 @@ export async function updateCurrentUserDevice({
   role?: string;
 }) {
   const headers = await getAuthHeaders();
-  const response = await fetchWithAuth('/users/device', {
-    method: 'PUT',
-    body: JSON.stringify({
-      ...(fcmToken !== undefined ? { fcmToken } : {}),
-      ...(role ? { role } : {}),
-    }),
-  }, headers);
+  const response = await fetchWithAuth(
+    '/users/device',
+    {
+      method: 'PUT',
+      body: JSON.stringify({
+        ...(fcmToken !== undefined ? { fcmToken } : {}),
+        ...(role ? { role } : {}),
+      }),
+    },
+    headers,
+  );
 
   if (!response.ok) {
     const text = await response.text();
-    throw new Error(`Failed to update device state: ${response.status} ${text}`);
+    throw new Error(
+      `Failed to update device state: ${response.status} ${text}`,
+    );
   }
 
   return normalizeUser(await response.json());
@@ -175,14 +251,20 @@ export async function updateCurrentUserStatus({
   role?: string;
 }) {
   const headers = await getAuthHeaders();
-  const response = await fetchWithAuth('/users/status', {
-    method: 'PUT',
-    body: JSON.stringify({
-      ...(typeof isHelperAvailable === 'boolean' ? { isHelperAvailable } : {}),
-      ...(lastKnownLocation ? { lastKnownLocation } : {}),
-      ...(role ? { role } : {}),
-    }),
-  }, headers);
+  const response = await fetchWithAuth(
+    '/users/status',
+    {
+      method: 'PUT',
+      body: JSON.stringify({
+        ...(typeof isHelperAvailable === 'boolean'
+          ? { isHelperAvailable }
+          : {}),
+        ...(lastKnownLocation ? { lastKnownLocation } : {}),
+        ...(role ? { role } : {}),
+      }),
+    },
+    headers,
+  );
 
   if (!response.ok) {
     const text = await response.text();

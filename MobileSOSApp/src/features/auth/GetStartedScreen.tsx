@@ -1,50 +1,94 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { ParamListBase } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { ChevronRight, Lock, MapPin, RefreshCw, Shield, Users, Zap } from 'lucide-react-native';
+import {
+  ArrowRight,
+  Lock,
+  MapPin,
+  RefreshCw,
+  Shield,
+  Users,
+  Zap,
+} from 'lucide-react-native';
 import React from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import {
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 
 type GetStartedScreenProps = {
   navigation: NativeStackNavigationProp<ParamListBase>;
 };
 
+type Feature = {
+  icon: React.ReactNode;
+  title: string;
+  desc: string;
+  tone: 'blue' | 'red' | 'green' | 'amber';
+};
+
 const ONBOARDING_SEEN_KEY = '@safeguard_has_seen_get_started';
 
-const features = [
+const P = {
+  bg: '#FAF9F6',
+  card: '#FFFFFF',
+  fieldBg: '#F4F4F0',
+  textPrimary: '#111111',
+  textSecondary: '#4E3F3F',
+  muted: '#8F6E70',
+  red: '#C8102E',
+  blue: '#155E8A',
+  border: '#EBE7E1',
+  success: '#0F9F6E',
+  amber: '#B7791F',
+};
+
+const features: Feature[] = [
   {
-    icon: <MapPin color="#3B82F6" size={22} />,
+    icon: <MapPin color={P.blue} size={22} strokeWidth={2.3} />,
     title: 'Live Location Tracking',
     desc: 'Keep your current coordinates ready for emergency response.',
+    tone: 'blue',
   },
   {
-    icon: <Zap color="#F59E0B" size={22} />,
+    icon: <Zap color={P.red} size={22} strokeWidth={2.3} />,
     title: 'Instant SOS Alert',
     desc: 'Trigger nearby helper outreach with one tap.',
+    tone: 'red',
   },
   {
-    icon: <Shield color="#10B981" size={22} />,
+    icon: <Shield color={P.success} size={22} strokeWidth={2.3} />,
     title: 'Always-On Safety',
     desc: 'Stay visible to the system when an incident happens.',
+    tone: 'green',
   },
   {
-    icon: <Users color="#8B5CF6" size={22} />,
+    icon: <Users color={P.blue} size={22} strokeWidth={2.3} />,
     title: 'Emergency Contacts',
     desc: 'Notify trusted people alongside helper dispatch.',
+    tone: 'blue',
   },
   {
-    icon: <Lock color="#EF4444" size={22} />,
+    icon: <Lock color={P.red} size={22} strokeWidth={2.3} />,
     title: 'Protected Actions',
     desc: 'Reduce accidental taps during stressful moments.',
+    tone: 'red',
   },
   {
-    icon: <RefreshCw color="#10B981" size={22} />,
+    icon: <RefreshCw color={P.amber} size={22} strokeWidth={2.3} />,
     title: 'Real-Time Updates',
     desc: 'Keep incident status and helper movement in sync.',
+    tone: 'amber',
   },
 ];
 
-export default function GetStartedScreen({ navigation }: GetStartedScreenProps) {
+export default function GetStartedScreen({
+  navigation,
+}: GetStartedScreenProps) {
   const handleGetStarted = async () => {
     await AsyncStorage.setItem(ONBOARDING_SEEN_KEY, 'true');
     navigation.replace('LocationAccess');
@@ -52,27 +96,31 @@ export default function GetStartedScreen({ navigation }: GetStartedScreenProps) 
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+      >
         <View style={styles.header}>
           <View style={styles.logoContainer}>
-            <Shield color="#FFF" size={42} fill="#DC2626" />
+            <Shield color={P.red} size={42} strokeWidth={2.3} />
           </View>
+          <Text style={styles.stepText}>MOBILE SOS</Text>
           <Text style={styles.title}>SafeGuard</Text>
-          <Text style={styles.subtitle}>Emergency safety and live response.</Text>
+          <Text style={styles.subtitle}>
+            Emergency safety and live response when every second matters.
+          </Text>
           <View style={styles.trustBadge}>
-            <Text style={styles.trustText}>Live maps. Fast dispatch. Clear status.</Text>
+            <Text style={styles.trustText}>
+              Live maps. Fast dispatch. Clear status.
+            </Text>
           </View>
         </View>
 
-        {features.map((feature) => (
-          <View key={feature.title} style={styles.card}>
-            <View style={styles.iconBox}>{feature.icon}</View>
-            <View style={styles.cardText}>
-              <Text style={styles.featureTitle}>{feature.title}</Text>
-              <Text style={styles.featureDesc}>{feature.desc}</Text>
-            </View>
-          </View>
-        ))}
+        <View style={styles.featureGrid}>
+          {features.map(feature => (
+            <FeatureCard key={feature.title} feature={feature} />
+          ))}
+        </View>
 
         <TouchableOpacity
           style={styles.mainButton}
@@ -80,77 +128,126 @@ export default function GetStartedScreen({ navigation }: GetStartedScreenProps) 
           onPress={handleGetStarted}
         >
           <Text style={styles.mainButtonText}>Get Started</Text>
-          <ChevronRight color="#FFF" size={20} />
+          <ArrowRight color="#FFFFFF" size={25} strokeWidth={2.5} />
         </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
   );
 }
 
+function FeatureCard({ feature }: { feature: Feature }) {
+  return (
+    <View style={styles.card}>
+      <View style={[styles.iconBox, iconToneStyles[feature.tone]]}>
+        {feature.icon}
+      </View>
+      <View style={styles.cardText}>
+        <Text style={styles.featureTitle}>{feature.title}</Text>
+        <Text style={styles.featureDesc}>{feature.desc}</Text>
+      </View>
+    </View>
+  );
+}
+
+const iconToneStyles = StyleSheet.create({
+  blue: { backgroundColor: '#E7F1F8' },
+  red: { backgroundColor: '#FCE8EA' },
+  green: { backgroundColor: '#E8F6F0' },
+  amber: { backgroundColor: '#FFF7E6' },
+});
+
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#FAFAFA' },
-  content: { paddingHorizontal: 24, paddingTop: 40, paddingBottom: 30 },
-  header: { alignItems: 'center', marginBottom: 35 },
+  container: { flex: 1, backgroundColor: P.bg },
+  content: { paddingHorizontal: 24, paddingTop: 30, paddingBottom: 30 },
+  header: { alignItems: 'center', marginBottom: 26 },
   logoContainer: {
-    backgroundColor: '#FFF',
-    padding: 12,
-    borderRadius: 22,
-    elevation: 6,
-    shadowColor: '#000',
-    shadowOpacity: 0.1,
-    shadowOffset: { width: 0, height: 4 },
-    shadowRadius: 12,
-    marginBottom: 12,
+    width: 94,
+    height: 94,
+    borderRadius: 47,
+    backgroundColor: P.fieldBg,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: P.border,
   },
-  title: { fontSize: 34, fontWeight: '900', color: '#111827', letterSpacing: -0.5 },
-  subtitle: { fontSize: 16, color: '#6B7280', fontWeight: '500' },
+  stepText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: P.blue,
+    marginBottom: 8,
+    letterSpacing: 1,
+  },
+  title: {
+    fontSize: 34,
+    fontWeight: '900',
+    color: P.textPrimary,
+    lineHeight: 40,
+  },
+  subtitle: {
+    fontSize: 16,
+    color: P.textSecondary,
+    fontWeight: '500',
+    textAlign: 'center',
+    marginTop: 8,
+    lineHeight: 23,
+  },
   trustBadge: {
-    backgroundColor: '#DCFCE7',
+    backgroundColor: '#E8F6F0',
     paddingHorizontal: 14,
-    paddingVertical: 5,
-    borderRadius: 20,
-    marginTop: 12,
+    paddingVertical: 7,
+    borderRadius: 18,
+    marginTop: 14,
   },
-  trustText: { color: '#166534', fontWeight: '800', fontSize: 12 },
+  trustText: { color: P.success, fontWeight: '900', fontSize: 12 },
+  featureGrid: { marginBottom: 12 },
   card: {
     flexDirection: 'row',
-    backgroundColor: '#FFF',
-    padding: 16,
-    borderRadius: 20,
-    marginBottom: 14,
+    backgroundColor: P.card,
+    padding: 15,
+    borderRadius: 18,
+    marginBottom: 12,
     alignItems: 'center',
-    elevation: 3,
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
+    borderWidth: 1,
+    borderColor: P.border,
+    shadowColor: '#000000',
+    shadowOpacity: 0.04,
     shadowOffset: { width: 0, height: 2 },
-    shadowRadius: 6,
+    shadowRadius: 8,
+    elevation: 2,
   },
   iconBox: {
     width: 48,
     height: 48,
     borderRadius: 14,
-    backgroundColor: '#F3F4F6',
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 16,
+    marginRight: 14,
   },
-  cardText: { flex: 1 },
-  featureTitle: { fontSize: 15, fontWeight: '800', color: '#111827' },
-  featureDesc: { fontSize: 13, color: '#6B7280', marginTop: 2, fontWeight: '500' },
+  cardText: { flex: 1, minWidth: 0 },
+  featureTitle: { fontSize: 15, fontWeight: '900', color: P.textPrimary },
+  featureDesc: {
+    fontSize: 13,
+    color: P.textSecondary,
+    marginTop: 3,
+    fontWeight: '500',
+    lineHeight: 18,
+  },
   mainButton: {
-    backgroundColor: '#DC2626',
+    backgroundColor: P.red,
     width: '100%',
-    padding: 20,
-    borderRadius: 18,
+    minHeight: 62,
+    borderRadius: 20,
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 15,
-    elevation: 8,
-    shadowColor: '#DC2626',
+    marginTop: 8,
+    gap: 10,
+    shadowColor: P.red,
     shadowOpacity: 0.22,
-    shadowOffset: { width: 0, height: 6 },
-    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 16 },
+    shadowRadius: 22,
+    elevation: 7,
   },
-  mainButtonText: { color: '#FFF', fontSize: 18, fontWeight: '900', marginRight: 8 },
+  mainButtonText: { color: '#FFFFFF', fontSize: 18, fontWeight: '900' },
 });

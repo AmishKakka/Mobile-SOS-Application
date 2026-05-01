@@ -42,6 +42,21 @@ const userSchema = new mongoose.Schema({
         validate: [arrayLimit, '{PATH} exceeds the limit of 5']
     },
 
+    // New user setup progress
+    profileSetup: {
+        personalDetailsCompleted: { type: Boolean, default: false },
+        emergencyContactsCompleted: { type: Boolean, default: false },
+        medicalProfileCompleted: { type: Boolean, default: false },
+        pinSetupCompleted: { type: Boolean, default: false },
+        completedAt: { type: Date, default: null }
+    },
+
+    // Security PIN used to confirm high-risk actions like cancelling active SOS
+    security: {
+        pinHash: { type: String, select: false },
+        pinUpdatedAt: { type: Date, default: null }
+    },
+
     // System App Logic
     role: {
         type: String,

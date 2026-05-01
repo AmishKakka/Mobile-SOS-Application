@@ -7,10 +7,13 @@ import {
 } from '@react-native-firebase/messaging';
 import { useEffect, useRef } from 'react';
 
-import { getCurrentAppUser, updateCurrentUserStatus } from '../services/appUser';
+import {
+  getCurrentAppUser,
+  updateCurrentUserStatus,
+} from '../services/appUser';
 import { getHelperModeState } from '../services/helperMode';
 import { flushOfflineQueue } from '../services/locationTracker';
-import { registerSocketUser } from '../services/socketService';
+import { getSocket, registerSocketUser } from '../services/socketService';
 import {
   getCurrentRouteName,
   navigateFromAnywhere,
@@ -26,6 +29,12 @@ type IncomingSOSPayload = {
   incidentType?: string;
 };
 
+type ActiveHelperResponsePayload = Partial<IncomingSOSPayload> & {
+  active?: boolean;
+  helperId?: string;
+  activeSeconds?: number;
+};
+
 function parseNotificationPayload(message: any): IncomingSOSPayload | null {
   const data = message?.data;
   if (!data || data.type !== 'SOS_DISPATCH') {
@@ -38,9 +47,16 @@ function parseNotificationPayload(message: any): IncomingSOSPayload | null {
   const lat = Number(data.victimLat);
   const lng = Number(data.victimLng);
   const helperDistanceMeters =
-    data.helperDistanceMeters !== undefined ? Number(data.helperDistanceMeters) : undefined;
+    data.helperDistanceMeters !== undefined
+      ? Number(data.helperDistanceMeters)
+      : undefined;
 
-  if (!roomId || !victimUserId || !Number.isFinite(lat) || !Number.isFinite(lng)) {
+  if (
+    !roomId ||
+    !victimUserId ||
+    !Number.isFinite(lat) ||
+    !Number.isFinite(lng)
+  ) {
     return null;
   }
 
@@ -50,7 +66,8 @@ function parseNotificationPayload(message: any): IncomingSOSPayload | null {
     victimName: victimName || victimUserId,
     victimLocation: { lat, lng },
     helperDistanceMeters:
-      helperDistanceMeters !== undefined && Number.isFinite(helperDistanceMeters)
+      helperDistanceMeters !== undefined &&
+      Number.isFinite(helperDistanceMeters)
         ? helperDistanceMeters
         : undefined,
     incidentType: String(data.incidentType || 'Emergency'),
@@ -61,7 +78,9 @@ export default function HelperDispatchRuntime() {
   const lastOpenedRoomRef = useRef<string | null>(null);
   const lastOpenedAtRef = useRef(0);
 
-  const isHelperDispatchEnabled = async (payload?: IncomingSOSPayload | null) => {
+  const isHelperDispatchEnabled = async (
+    payload?: IncomingSOSPayload | null,
+  ) => {
     const helperMode = await getHelperModeState();
 
     if (!helperMode.isAvailable) {
@@ -82,22 +101,150 @@ export default function HelperDispatchRuntime() {
   };
 
   useEffect(() => {
+    let cleanupSocketListeners: (() => void) | undefined;
+    let restoreTimeouts: ReturnType<typeof setTimeout>[] = [];
+    let cancelled = false;
+
+    const shouldOpenTracking = (roomId: string) => {
+      const currentRoute = navigationRef.getCurrentRoute();
+      const currentRoomId =
+        currentRoute?.params &&
+        typeof currentRoute.params === 'object' &&
+        'roomId' in currentRoute.params
+          ? String(
+              (currentRoute.params as Record<string, unknown>).roomId || '',
+            )
+          : null;
+
+      if (
+        currentRoomId === roomId &&
+        getCurrentRouteName() === 'HelperTracking'
+      ) {
+        return false;
+      }
+
+      const now = Date.now();
+      if (
+        lastOpenedRoomRef.current === roomId &&
+        now - lastOpenedAtRef.current < 2500
+      ) {
+        return false;
+      }
+
+      lastOpenedRoomRef.current = roomId;
+      lastOpenedAtRef.current = now;
+      return true;
+    };
+
+    const buildTrackingParams = (
+      session: { userId: string; name: string },
+      payload: ActiveHelperResponsePayload,
+    ) => {
+      const roomId = String(payload?.roomId || '').trim();
+      const victimUserId = String(payload?.victimUserId || '').trim();
+      const victimName = String(payload?.victimName || 'Nearby user').trim();
+      const latitude = Number(payload?.victimLocation?.lat);
+      const longitude = Number(payload?.victimLocation?.lng);
+
+      if (
+        !roomId ||
+        !victimUserId ||
+        !Number.isFinite(latitude) ||
+        !Number.isFinite(longitude)
+      ) {
+        return null;
+      }
+
+      return {
+        roomId,
+        helperId: session.userId,
+        helperName: session.name,
+        victimName: victimName || victimUserId,
+        victimLocation: { latitude, longitude },
+        incidentType: String(payload?.incidentType || 'Emergency'),
+      };
+    };
+
     const bootstrap = async () => {
-      const session = await isHelperDispatchEnabled();
+      const session = await getCurrentAppUser().catch(() => null);
       if (!session) {
         return;
       }
 
       try {
-        await registerSocketUser(session.userId, 'helper', session.name);
-        await updateCurrentUserStatus({ isHelperAvailable: true, role: 'helper' });
-        await flushOfflineQueue(session.userId);
+        const socket = getSocket();
+        const helperMode = await getHelperModeState().catch(() => ({
+          isAvailable: false,
+        }));
+        const openActiveResponse = (
+          payload: ActiveHelperResponsePayload | null,
+        ) => {
+          if (cancelled || !payload?.active) {
+            return;
+          }
+
+          const params = buildTrackingParams(session, payload);
+          if (!params || !shouldOpenTracking(params.roomId)) {
+            return;
+          }
+
+          navigateFromAnywhere('HelperTracking', params);
+        };
+        const requestActiveResponseRestore = () => {
+          socket.emit(
+            'helper_restore_active_response',
+            { helperId: session.userId },
+            (response: ActiveHelperResponsePayload) => {
+              openActiveResponse(response);
+            },
+          );
+        };
+        const onRegistered = (payload: any) => {
+          if (String(payload?.userId || '') === session.userId) {
+            requestActiveResponseRestore();
+          }
+        };
+
+        socket.on('active_helper_response', openActiveResponse);
+        socket.on('registered', onRegistered);
+        cleanupSocketListeners = () => {
+          socket.off('active_helper_response', openActiveResponse);
+          socket.off('registered', onRegistered);
+        };
+
+        requestActiveResponseRestore();
+        restoreTimeouts = [600, 1500, 3000].map(delay =>
+          setTimeout(requestActiveResponseRestore, delay),
+        );
+
+        if (helperMode.isAvailable) {
+          await registerSocketUser(session.userId, 'helper', session.name);
+          await updateCurrentUserStatus({
+            isHelperAvailable: true,
+            role: 'helper',
+          }).catch(error => {
+            console.warn(
+              '[HELPER RUNTIME] Helper status update skipped:',
+              error,
+            );
+          });
+          await flushOfflineQueue(session.userId);
+        }
       } catch (error) {
-        console.warn('[HELPER RUNTIME] Failed to restore helper runtime:', error);
+        console.warn(
+          '[HELPER RUNTIME] Failed to restore helper runtime:',
+          error,
+        );
       }
     };
 
     bootstrap();
+
+    return () => {
+      cancelled = true;
+      cleanupSocketListeners?.();
+      restoreTimeouts.forEach(clearTimeout);
+    };
   }, []);
 
   useEffect(() => {
@@ -108,19 +255,26 @@ export default function HelperDispatchRuntime() {
         typeof currentRoute.params === 'object' &&
         currentRoute.params &&
         'roomId' in currentRoute.params
-          ? String((currentRoute.params as Record<string, unknown>).roomId || '')
+          ? String(
+              (currentRoute.params as Record<string, unknown>).roomId || '',
+            )
           : null;
 
       if (
         currentRoomId &&
         currentRoomId === payload.roomId &&
-        ['HelperSOSNotification', 'HelperTracking'].includes(getCurrentRouteName() || '')
+        ['HelperSOSNotification', 'HelperTracking'].includes(
+          getCurrentRouteName() || '',
+        )
       ) {
         return false;
       }
 
       const now = Date.now();
-      if (lastOpenedRoomRef.current === payload.roomId && now - lastOpenedAtRef.current < 5000) {
+      if (
+        lastOpenedRoomRef.current === payload.roomId &&
+        now - lastOpenedAtRef.current < 5000
+      ) {
         return false;
       }
 
@@ -146,7 +300,7 @@ export default function HelperDispatchRuntime() {
       return () => {};
     }
 
-    const unsubscribeForeground = onMessage(messaging, async (message) => {
+    const unsubscribeForeground = onMessage(messaging, async message => {
       const payload = parseNotificationPayload(message);
       const session = await isHelperDispatchEnabled(payload);
       if (!session) {
@@ -155,18 +309,21 @@ export default function HelperDispatchRuntime() {
 
       openDispatch(payload);
     });
-    const unsubscribeNotificationOpen = onNotificationOpenedApp(messaging, async (message) => {
-      const payload = parseNotificationPayload(message);
-      const session = await isHelperDispatchEnabled(payload);
-      if (!session) {
-        return;
-      }
+    const unsubscribeNotificationOpen = onNotificationOpenedApp(
+      messaging,
+      async message => {
+        const payload = parseNotificationPayload(message);
+        const session = await isHelperDispatchEnabled(payload);
+        if (!session) {
+          return;
+        }
 
-      openDispatch(payload);
-    });
+        openDispatch(payload);
+      },
+    );
 
     getInitialNotification(messaging)
-      .then(async (message) => {
+      .then(async message => {
         const payload = parseNotificationPayload(message);
         const session = await isHelperDispatchEnabled(payload);
         if (!session) {
@@ -175,7 +332,7 @@ export default function HelperDispatchRuntime() {
 
         openDispatch(payload);
       })
-      .catch((error) => {
+      .catch(error => {
         console.warn('[FCM] Failed to read initial notification:', error);
       });
 

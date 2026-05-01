@@ -2,7 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const HELPER_MODE_KEY = '@safeguard_helper_mode';
 const HELPER_MODE_SCHEMA_KEY = '@safeguard_helper_mode_schema';
-const HELPER_MODE_SCHEMA_VERSION = 1;
+const HELPER_MODE_SCHEMA_VERSION = 2;
 
 export type HelperModeState = {
   isAvailable: boolean;
@@ -10,7 +10,7 @@ export type HelperModeState = {
 };
 
 const DEFAULT_STATE: HelperModeState = {
-  isAvailable: false,
+  isAvailable: true,
   updatedAt: null,
 };
 
@@ -18,7 +18,10 @@ export async function getHelperModeState(): Promise<HelperModeState> {
   try {
     const schemaVersion = await AsyncStorage.getItem(HELPER_MODE_SCHEMA_KEY);
     if (schemaVersion !== String(HELPER_MODE_SCHEMA_VERSION)) {
-      await AsyncStorage.setItem(HELPER_MODE_KEY, JSON.stringify(DEFAULT_STATE));
+      await AsyncStorage.setItem(
+        HELPER_MODE_KEY,
+        JSON.stringify(DEFAULT_STATE),
+      );
       await AsyncStorage.setItem(
         HELPER_MODE_SCHEMA_KEY,
         String(HELPER_MODE_SCHEMA_VERSION),
@@ -35,7 +38,8 @@ export async function getHelperModeState(): Promise<HelperModeState> {
     return {
       isAvailable: Boolean(parsed.isAvailable),
       updatedAt:
-        typeof parsed.updatedAt === 'number' && Number.isFinite(parsed.updatedAt)
+        typeof parsed.updatedAt === 'number' &&
+        Number.isFinite(parsed.updatedAt)
           ? parsed.updatedAt
           : null,
     };
